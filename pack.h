@@ -14,6 +14,9 @@ public:
     auto& get_object(){
         return std::get<I>(objects);
     }
+    static constexpr int get_num_objects(){
+        return sizeof...(Objects);
+    }
 };
 
 #endif //PACK_H

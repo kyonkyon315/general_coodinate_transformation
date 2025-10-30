@@ -101,6 +101,7 @@ public:
         // ヘルパーを初期呼び出し (インデックスは空)
         set_value_helper(func);
     }
+    static constexpr int get_dimension(){return sizeof...(Axes)};
 };
 
 template <typename T, typename... Axes>

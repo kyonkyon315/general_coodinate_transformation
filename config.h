@@ -135,7 +135,7 @@ class X__diff_x_
 {
 public:
     X__diff_x_(){}
-    static constexpr Value operator()(int calc_x_,int calc_vr,int calc_vt,int calc_vp){
+    static constexpr Value at(int calc_x_,int calc_vr,int calc_vt,int calc_vp){
         return 1./grid_size_x_;
     }
 };
@@ -150,7 +150,7 @@ private:
     }
 public:
     Vr_diff_vx(){table.set_value(honestly_calc);}
-    Value operator()(int calc_x_,int calc_vr,int calc_vt,int calc_vp)const{
+    Value at(int calc_x_,int calc_vr,int calc_vt,int calc_vp)const{
         return table(calc_vt,calc_vp);
     }
 };
@@ -165,7 +165,7 @@ private:
     }
 public:
     Vr_diff_vy(){table.set_value(honestly_calc);}
-    Value operator()(int calc_x_,int calc_vr,int calc_vt,int calc_vp)const{
+    Value at(int calc_x_,int calc_vr,int calc_vt,int calc_vp)const{
         return table(calc_vt,calc_vp);
     }
 };
@@ -180,7 +180,7 @@ private:
     }
 public:
     Vr_diff_vz(){table.set_value(honestly_calc);}
-    Value operator()(int calc_x_,int calc_vr,int calc_vt,int calc_vp)const{
+    Value at(int calc_x_,int calc_vr,int calc_vt,int calc_vp)const{
         return table(calc_vt,calc_vp);
     }
 };
@@ -195,7 +195,7 @@ private:
     }
 public:
     Vt_diff_vx(){table.set_value(honestly_calc);}
-    Value operator()(int calc_x_,int calc_vr,int calc_vt,int calc_vp)const{
+    Value at(int calc_x_,int calc_vr,int calc_vt,int calc_vp)const{
         return table(calc_vr,calc_vt,calc_vp);
     }
 };
@@ -210,7 +210,7 @@ private:
     }
 public:
     Vt_diff_vy(){table.set_value(honestly_calc);}
-    Value operator()(int calc_x_,int calc_vr,int calc_vt,int calc_vp)const{
+    Value at(int calc_x_,int calc_vr,int calc_vt,int calc_vp)const{
         return table(calc_vr,calc_vt,calc_vp);
     }
 };
@@ -225,7 +225,7 @@ private:
     }
 public:
     Vt_diff_vz(){table.set_value(honestly_calc);}
-    Value operator()(int calc_x_,int calc_vr,int calc_vt,int calc_vp)const{
+    Value at(int calc_x_,int calc_vr,int calc_vt,int calc_vp)const{
         return table(calc_vr,calc_vt,calc_vp);
     }
 };
@@ -240,7 +240,7 @@ private:
     }
 public:
     Vp_diff_vx(){table.set_value(honestly_calc);}
-    Value operator()(int calc_x_,int calc_vr,int calc_vt,int calc_vp)const{
+    Value at(int calc_x_,int calc_vr,int calc_vt,int calc_vp)const{
         return table(calc_vr,calc_vt,calc_vp);
     }
 };
@@ -255,7 +255,7 @@ private:
     }
 public:
     Vp_diff_vy(){table.set_value(honestly_calc);}
-    Value operator()(int calc_x_,int calc_vr,int calc_vt,int calc_vp)const{
+    Value at(int calc_x_,int calc_vr,int calc_vt,int calc_vp)const{
         return table(calc_vr,calc_vt,calc_vp);
     }
 };
@@ -303,7 +303,7 @@ class Fx_ {
 public:
     Fx_(){}
     Value at(int calc_x_, int calc_vr, int calc_vt, int calc_vp) const {
-        return Global::physic_x_.translate(calc_x_, calc_vr, calc_vt, calc_vp);
+        return Global::physic_vx.translate(calc_x_, calc_vr, calc_vt, calc_vp);
     }
 };
 
@@ -366,14 +366,24 @@ namespace Global{
     Fvz flux_vz;
 }
 /****************************************************************************
- *演算子はOperatorsに、移流項はAdvectionsに、それぞれclass Packを用いてまとめる。
+ *物理演算子はOperatorsに、物理移流項はAdvectionsに、それぞれclass Packを用いてまとめる。
  *ただし、Operatorsの順番とAdvectionsの順番は式の順番と同じにしてください。
+ *
+ *さらにそれらOperatorsとAdvections、および発展させたい関数（ここではdist_func）を
+ *用いてAdvectionEquationをインスタンス化します。これが、本シミュレーションのメインと
+ *なるソルバーとして働きます。
  ****************************************************************************/
 #include "pack.h"
-Pack operators(Global::physic_x_,Global::physic_vx,Global::physic_vy,Global::physic_vz);
-Pack advections(Global::flux_x_,Global::flux_vx,Global::flux_vy,Global::flux_vz);
 #include "advection_equation.h"
-AdvectionEquation equation(Global::dist_function,operators,advections);
+namespace Global{
+    Pack operators(Global::physic_x_,Global::physic_vx,Global::physic_vy,Global::physic_vz);
+    Pack advections(Global::flux_x_,Global::flux_vx,Global::flux_vy,Global::flux_vz);
+    AdvectionEquation equation(Global::dist_function,operators,advections,jacobian);
+}
 
+/****************************************************************************
+ * 次に、数値振動を抑えるためのlimiterを選択します。今回は、Umeda2008を用います。
+ ****************************************************************************/
+using Limiter = Umeda2008;
 
 #endif //CONFIG_H
