@@ -33,6 +33,11 @@ using MagneticField = NdTensor<Vec3<Value>,Axis_x_>;
 
 //グローバル変数としてインスタンス化しておく。
 namespace Global{
+    Axis_x_ axis_x_;
+    Axis_vr axis_vr;
+    Axis_vt axis_vt;
+    Axis_vp axis_vp;
+
     DistributionFunction dist_function;
     ElectricField e_field;
     MagneticField m_field;
@@ -378,7 +383,8 @@ namespace Global{
 namespace Global{
     Pack operators(Global::physic_x_,Global::physic_vx,Global::physic_vy,Global::physic_vz);
     Pack advections(Global::flux_x_,Global::flux_vx,Global::flux_vy,Global::flux_vz);
-    AdvectionEquation equation(Global::dist_function,operators,advections,jacobian);
+    Pack coordinate(Global::axis_x_,Global::axis_vr,Global::axis_vt,Global::axis_vp);
+    AdvectionEquation equation(Global::dist_function,operators,advections,coordinate,jacobian);
 }
 
 /****************************************************************************

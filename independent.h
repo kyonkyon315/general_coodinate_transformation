@@ -1,4 +1,5 @@
 // --- (微分ゼロ) を表すクラス ---
+using Value = double;
 class Independent
 {
 public:

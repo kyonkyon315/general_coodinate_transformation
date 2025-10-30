@@ -17,6 +17,8 @@ public:
     static constexpr int get_num_objects(){
         return sizeof...(Objects);
     }
+    template<int I>
+    using element = typename std::tuple_element<I, std::tuple<Objects...>>::type;
 };
 
 #endif //PACK_H
