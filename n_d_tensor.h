@@ -7,10 +7,10 @@
 
 template<typename T,typename... Axes>
 class NdTensor {
-private:
+public:
     // 軸ごとの長さをコンパイル時に収集
     static constexpr std::array<int, sizeof...(Axes)> shape = {Axes::length...};
-
+private:
     // 総要素数をコンパイル時計算
     static constexpr int total_size = []() constexpr {
         int prod = 1;
@@ -63,7 +63,7 @@ private:
         // 基底ケース: 全ての次元のインデックスが揃った
         if constexpr (Dim == sizeof...(Axes)) {
             // operator() を呼び出して値を設定
-            this->operator()(indices...) = func(indices...);
+            this->at(indices...) = func(indices...);
         }
         // 再帰ステップ:
         else {
@@ -85,13 +85,13 @@ public:
     // operator() は (シグネチャは) 変更なし
     // 内部で呼び出す flatten_index が最適化されている
     template<typename... Idx>
-    inline T& operator()(Idx... indices) noexcept {
+    inline T& at(Idx... indices) noexcept {
         static_assert(sizeof...(Idx) == sizeof...(Axes));
         return data[flatten_index(indices...)];
     }
 
     template<typename... Idx>
-    inline const T& operator()(Idx... indices) const noexcept {
+    inline const T& at(Idx... indices) const noexcept {
         static_assert(sizeof...(Idx) == sizeof...(Axes));
         return data[flatten_index(indices...)];
     }

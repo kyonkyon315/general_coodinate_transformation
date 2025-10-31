@@ -365,6 +365,16 @@ namespace Global{
     Fvy flux_vy;
     Fvz flux_vz;
 }
+
+/****************************************************************************
+ * 次に、数値振動を抑えるためのlimiterを選択します。今回は、Umeda2008を用います。
+ ****************************************************************************/
+#include "umeda_2008.h"
+using Limiter = Umeda2008;
+namespace Global{
+    Limiter limiter;
+}
+
 /****************************************************************************
  *物理演算子はOperatorsに、物理移流項はAdvectionsに、それぞれclass Packを用いてまとめる。
  *ただし、Operatorsの順番とAdvectionsの順番は式の順番と同じにしてください。
@@ -376,15 +386,8 @@ namespace Global{
 #include "pack.h"
 #include "advection_equation.h"
 namespace Global{
-    Pack operators(Global::physic_x_,Global::physic_vx,Global::physic_vy,Global::physic_vz);
-    Pack advections(Global::flux_x_,Global::flux_vx,Global::flux_vy,Global::flux_vz);
-    AdvectionEquation equation(Global::dist_function,operators,advections,jacobian);
+    Pack operators(physic_x_,physic_vx,physic_vy,physic_vz);
+    Pack advections(flux_x_,flux_vx,flux_vy,flux_vz);
+    AdvectionEquation equation(dist_function,operators,advections,jacobian,limiter);
 }
-
-/****************************************************************************
- * 次に、数値振動を抑えるためのlimiterを選択します。今回は、Umeda2008を用います。
- ****************************************************************************/
-#include "umeda_2008.h"
-using Limiter = Umeda2008;
-
 #endif //CONFIG_H

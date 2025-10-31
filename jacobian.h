@@ -20,7 +20,7 @@ public:
         elements(args...)
     {}
     template<int I,int J>
-    const auto& get_calc_diff_phys(){
+    const auto& get_element(){
         return std::get<num_label*I+J>(elements);
     }
 
