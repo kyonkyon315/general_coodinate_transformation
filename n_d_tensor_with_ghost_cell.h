@@ -37,7 +37,7 @@ template<typename T,typename... Axes>
 class NdTensorWithGhostCell {
 public:
     // 軸ごとの長さをコンパイル時に収集
-    static constexpr std::array<int, sizeof...(Axes)> shape = {Axes::length...};
+    static constexpr std::array<int, sizeof...(Axes)> shape = {Axes::num_grid...};
     // 軸ごとのマイナス側ゴーストセル数をコンパイル時に収集
     static constexpr std::array<int, sizeof...(Axes)> L_ghost_lengths = {Axes::L_ghost_length...};
     // 軸ごとのプラス側ゴーストセル数をコンパイル時に収集

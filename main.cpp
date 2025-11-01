@@ -46,7 +46,7 @@ namespace Global{
 
 // --- グローバル定数とヘルパー関数の定義 ---
 
-const Value grid_size_x_ = 3.;
+constexpr Value grid_size_x_ = 3.;
 const Value grid_size_vr = 4.;
 const Value grid_size_vt = M_PI / (double)(Axis_vt::num_grid+1);
 const Value grid_size_vp = 2.*M_PI / (double)(Axis_vp::num_grid+1);
@@ -402,11 +402,11 @@ public:
     static const int label = 0;
     template<typename Func>
     inline Value left(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp)const{
-        return func(-calc_x, calc_vr, calc_vt, calc_vp);
+        return func(-calc_x_, calc_vr, calc_vt, calc_vp);
     }
     template<typename Func>
     inline Value right(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp)const{
-        return func(calc_x - Axis_x_::num_grid, calc_vr, calc_vt, calc_vp);
+        return func(calc_x_ - Axis_x_::num_grid, calc_vr, calc_vt, calc_vp);
     }
 };
 
@@ -416,7 +416,7 @@ public:
     static const int label = 1;
     template<typename Func>
     inline Value left(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp)const{
-        static_assert(Axis_vp::num_grid%2 == 0,"v_phy空間のグリッド数は偶数である必要がある")
+        static_assert(Axis_vp::num_grid%2 == 0,"v_phy空間のグリッド数は偶数である必要がある");
         constexpr int vp_half_num_grid=Axis_vp::num_grid/2;
         const int index_vp=(
             calc_vp < vp_half_num_grid ? 
@@ -429,7 +429,7 @@ public:
     //物理的におかしいけど、とりあえずこうしておく
     template<typename Func>
     inline Value right(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp)const{
-        return func(calc_x_, 2*Axis_vr::length-calc_vr-1, calc_vt, calc_vp);
+        return func(calc_x_, 2*Axis_vr::num_grid-calc_vr-1, calc_vt, calc_vp);
     }
 };
 
@@ -440,7 +440,7 @@ public:
     static const int label = 2;
     template<typename Func>
     inline Value left(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp)const{
-        static_assert(Axis_vp::num_grid%2 == 0,"v_phy空間のグリッド数は偶数である必要がある")
+        static_assert(Axis_vp::num_grid%2 == 0,"v_phy空間のグリッド数は偶数である必要がある");
         constexpr int vp_half_num_grid=Axis_vp::num_grid/2;
         const int index_vp=(
             calc_vp < vp_half_num_grid ? 
@@ -451,14 +451,14 @@ public:
     }
     template<typename Func>
     inline Value right(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp)const{
-        static_assert(Axis_vp::num_grid%2 == 0,"v_phy空間のグリッド数は偶数である必要がある")
+        static_assert(Axis_vp::num_grid%2 == 0,"v_phy空間のグリッド数は偶数である必要がある");
         constexpr int vp_half_num_grid=Axis_vp::num_grid/2;
         const int index_vp=(
             calc_vp < vp_half_num_grid ? 
             calc_vp+vp_half_num_grid
             :calc_vp-vp_half_num_grid
         );
-        return func(calc_x_, calc_vr, 2*Axis_vt::length-calc_vt-1, index_vp);
+        return func(calc_x_, calc_vr, 2*Axis_vt::num_grid-calc_vt-1, index_vp);
     }
 };
 
@@ -470,11 +470,11 @@ public:
     static const int label = 3;
     template<typename Func>
     inline Value left(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp)const{
-        return func(calc_x, calc_vr, calc_vt, -calc_vp);
+        return func(calc_x_, calc_vr, calc_vt, -calc_vp);
     }
     template<typename Func>
     inline Value right(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp)const{
-        return func(calc_x, calc_vr, calc_vt, calc_vp- Axis_vp::num_grid);
+        return func(calc_x_, calc_vr, calc_vt, calc_vp- Axis_vp::num_grid);
     }
 };
 /*--------------------------------------

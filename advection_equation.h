@@ -23,8 +23,8 @@ private:
     static constexpr int R = Scheme::used_id_right;
 
     //連鎖率を用いて、計算空間でのフラックスを計算します。
-    template<int I,int Target_Dim>
-    Value advection_in_calc_space_helper(int... indices){
+    template<int I,int Target_Dim,typename... Ints>
+    Value advection_in_calc_space_helper(Ints... indices){
         using E = decltype(jacobian.get_element<Target_Dim,I>());
         if constexpr(I==dimension-1){
             if constexpr(std::is_same_v<E, Independent>){
@@ -45,8 +45,8 @@ private:
         }
     }
 
-    template<int Target_Dim>
-    Value advection_in_calc_space(int... indices){
+    template<int Target_Dim,typename... Ints>
+    Value advection_in_calc_space(Ints... indices){
         return advection_in_calc_space_helper<0,Target_Dim>(indices...);
     }
 

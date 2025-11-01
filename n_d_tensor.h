@@ -9,7 +9,7 @@ template<typename T,typename... Axes>
 class NdTensor {
 public:
     // 軸ごとの長さをコンパイル時に収集
-    static constexpr std::array<int, sizeof...(Axes)> shape = {Axes::length...};
+    static constexpr std::array<int, sizeof...(Axes)> shape = {Axes::num_grid...};
 private:
     // 総要素数をコンパイル時計算
     static constexpr int total_size = []() constexpr {
@@ -101,7 +101,7 @@ public:
         // ヘルパーを初期呼び出し (インデックスは空)
         set_value_helper(func);
     }
-    static constexpr int get_dimension(){return sizeof...(Axes)};
+    static constexpr int get_dimension(){return sizeof...(Axes);};
 };
 
 template <typename T, typename... Axes>
