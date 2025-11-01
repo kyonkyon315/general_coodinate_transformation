@@ -1,5 +1,3 @@
-#ifndef CONFIG_H
-#define CONFIG_H
 #include <cmath>
 #include "axis.h"
 #include "n_d_tensor_with_ghost_cell.h"
@@ -137,7 +135,7 @@ class X__diff_x_
 {
 public:
     X__diff_x_(){}
-    static constexpr Value at(int calc_x_,int calc_vr,int calc_vt,int calc_vp){
+    Value at(int calc_x_,int calc_vr,int calc_vt,int calc_vp)const{
         return 1./grid_size_x_;
     }
 };
@@ -513,7 +511,7 @@ namespace Global{
     Pack advections(flux_x_,flux_vx,flux_vy,flux_vz);
     AdvectionEquation equation(dist_function,operators,advections,jacobian,scheme,boundary_condition);
 }
-#endif //CONFIG_H
+
 int main(){
     Global::equation.solve<Axis_x_>(0.1);
     return 0;

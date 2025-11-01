@@ -11,7 +11,7 @@ public:
         objects(objects...)
     {}
     template<int I>
-    auto& get_object(){
+    const auto& get_object()const{
         return std::get<I>(objects);
     }
     static constexpr int get_num_objects(){
