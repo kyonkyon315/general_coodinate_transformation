@@ -511,8 +511,27 @@ namespace Global{
     Pack advections(flux_x_,flux_vx,flux_vy,flux_vz);
     AdvectionEquation equation(dist_function,operators,advections,jacobian,scheme,boundary_condition);
 }
-
+#include "Timer.h"
 int main(){
-    Global::equation.solve<Axis_x_>(0.1);
+        for(int i=0;i<10;i++){
+        std::cout<<"start"<<std::endl;
+        Timer timer;
+        timer.start();
+        Global::equation.solve<Axis_x_>(0.1);
+        timer.stop();
+        std::cout<<timer<<"\n";
+        timer.start();
+        Global::equation.solve<Axis_vr>(0.1);
+        timer.stop();
+        std::cout<<timer<<"\n";
+        timer.start();
+        Global::equation.solve<Axis_vt>(0.1);
+        timer.stop();
+        std::cout<<timer<<"\n";
+        timer.start();
+        Global::equation.solve<Axis_vp>(0.1);
+        timer.stop();
+        std::cout<<timer<<"\n";
+    }
     return 0;
 }

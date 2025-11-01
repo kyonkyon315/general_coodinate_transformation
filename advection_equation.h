@@ -5,6 +5,7 @@
 #include <type_traits>
 #include <array>
 #include <utility>
+#include <omp.h>
 
 using Value = double;
 template<typename TargetFunction,typename Operators,typename Advections,typename Jacobian,typename Scheme,typename BoundaryCondition>
@@ -56,7 +57,15 @@ private:
         if constexpr(Depth == Dim){
             // leaf を呼ぶ（戻り値使うなら受け取る）
             Value df = solve_leaf<Target_Dim>(dt, indices...);
-            (void)df; // 今は使わないなら抑制
+            target_func.at(indices...)+=df;
+        }
+        else if constexpr(Depth==0){
+            constexpr int axis_len = TargetFunction::shape[Depth];
+            #pragma omp parallel for
+            for(int i=0;i<axis_len;++i){
+                // 再帰：indices に i を追加
+                solve_helper<Depth+1,Dim,Target_Dim>(dt, indices..., i);
+            }
         }
         else{
             constexpr int axis_len = TargetFunction::shape[Depth];
@@ -84,11 +93,16 @@ private:
         Value advection = this->advection_in_calc_space<Target_Dim>(indices...);
         Value nyu = - dt * advection;
 
-        // scheme.calc_df を呼ぶ（this-> を明示）
         Value df = this->scheme.calc_df(
-            Utility::arg_changer<Target_Dim, stencil_offsets[Is]>(this->target_func.at, indices...)...,
+            Utility::arg_changer<Target_Dim, stencil_offsets[Is]>(
+                [this](auto... idxs) -> Value {
+                    return this->target_func.at(idxs...);
+                },
+                indices...
+            )...,
             nyu
         );
+
 
         return df;
     }

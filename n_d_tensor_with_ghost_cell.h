@@ -13,6 +13,8 @@
 #include <tuple>      // スライス機能のために追加
 #include <type_traits> // スライス機能のために追加
 
+using Index = long long;
+
 // --- スライス用ヘルパー型 ---
 
 /**
@@ -24,11 +26,11 @@ struct FullSlice {};
  * @brief スライス指定: [START, END) の半開区間を対象とすることを示すタグ
  * (Pythonの [START:END] と同じ)
  */
-template<int START, int END>
+template<Index START, Index END>
 struct Slice {
     static_assert(START <= END, "Slice: START must be less than or equal to END");
-    static constexpr int START_val = START;
-    static constexpr int END_val = END;
+    static constexpr Index START_val = START;
+    static constexpr Index END_val = END;
 };
 // --- (ここまで) ---
 
@@ -37,15 +39,15 @@ template<typename T,typename... Axes>
 class NdTensorWithGhostCell {
 public:
     // 軸ごとの長さをコンパイル時に収集
-    static constexpr std::array<int, sizeof...(Axes)> shape = {Axes::num_grid...};
+    static constexpr std::array<Index, sizeof...(Axes)> shape = {Axes::num_grid...};
     // 軸ごとのマイナス側ゴーストセル数をコンパイル時に収集
-    static constexpr std::array<int, sizeof...(Axes)> L_ghost_lengths = {Axes::L_ghost_length...};
+    static constexpr std::array<Index, sizeof...(Axes)> L_ghost_lengths = {Axes::L_ghost_length...};
     // 軸ごとのプラス側ゴーストセル数をコンパイル時に収集
-    static constexpr std::array<int, sizeof...(Axes)> R_ghost_lengths = {Axes::R_ghost_length...};
+    static constexpr std::array<Index, sizeof...(Axes)> R_ghost_lengths = {Axes::R_ghost_length...};
 
-    static constexpr std::array<int,sizeof...(Axes)> data_shape 
+    static constexpr std::array<Index,sizeof...(Axes)> data_shape 
         = [](){
-            std::array<int, sizeof...(Axes)> s = {};
+            std::array<Index, sizeof...(Axes)> s = {};
             for(int i=0;i<(int)sizeof...(Axes);++i){
                 s[i]=shape[i]+L_ghost_lengths[i]+R_ghost_lengths[i];
             }
@@ -53,8 +55,8 @@ public:
         } ();
 private:
     // 総要素数をコンパイル時計算
-    static constexpr int total_size = []() constexpr {
-        int prod = 1;
+    static constexpr Index total_size = []() constexpr {
+        Index prod = 1;
         for (auto s : data_shape) prod *= s;
         return prod;
     }();
@@ -62,9 +64,9 @@ private:
     std::vector<T> data;
 
     // ストライドをコンパイル時に計算して配列に格納
-    static constexpr std::array<int, sizeof...(Axes)> strides = []() constexpr {
-        std::array<int, sizeof...(Axes)> s = {};
-        int current_stride = 1;
+    static constexpr std::array<Index, sizeof...(Axes)> strides = []() constexpr {
+        std::array<Index, sizeof...(Axes)> s = {};
+        Index current_stride = 1;
         
         for (int i = (int)sizeof...(Axes) - 1; i >= 0; --i) {
             s[i] = current_stride;
@@ -74,8 +76,8 @@ private:
     }();
 
     // オフセットをコンパイル時に計算 (物理インデックス(0,0..)が data[] のどこか)
-    static constexpr int offset = []() constexpr {
-        int ret_val = 0;
+    static constexpr Index offset = []() constexpr {
+        Index ret_val = 0;
         for(int i=0;i<sizeof...(Axes);++i){
             ret_val+= strides[i]*L_ghost_lengths[i];
         }
@@ -84,7 +86,7 @@ private:
 
     // flatten_index_helper
     template<size_t I = 0, typename... IdT>
-    constexpr int flatten_index_helper(int i, IdT... rest) const noexcept {
+    constexpr int flatten_index_helper(Index i, IdT... rest) const noexcept {
         if constexpr (sizeof...(rest) == 0) {
             return i * strides[I]+offset; 
         } else {
@@ -108,7 +110,7 @@ private:
             this->at(indices...) = func(indices...);
         }
         else {
-            for (int i = 0; i < shape[Dim]; ++i) { // 物理領域 (0 .. shape-1)
+            for (Index i = 0; i < shape[Dim]; ++i) { // 物理領域 (0 .. shape-1)
                 set_value_helper<Func, Dim + 1>(func, indices..., i);
             }
         }
@@ -139,26 +141,26 @@ private:
                 // --- (ここからがご要望の修正箇所) ---
                 
                 // 1. ユーザー指定の範囲を取得
-                constexpr int req_start = CurrentSlice::START_val;
-                constexpr int req_end   = CurrentSlice::END_val;
+                constexpr Index req_start = CurrentSlice::START_val;
+                constexpr Index req_end   = CurrentSlice::END_val;
 
                 // 2. この次元の安全な境界（確保されたメモリ全体）を取得
-                constexpr int min_bound = -L_ghost_lengths[Dim];                // 例: -3
-                constexpr int max_bound = shape[Dim] + R_ghost_lengths[Dim];    // 例: 10 + 3 = 13
+                constexpr Index min_bound = -L_ghost_lengths[Dim];                // 例: -3
+                constexpr Index max_bound = shape[Dim] + R_ghost_lengths[Dim];    // 例: 10 + 3 = 13
 
                 // 3. ユーザーの要求を、安全な境界内に自動クリッピング
                 
                 // start_idx = max(min_bound, req_start)
                 // (もし req_start が -100 なら、-3 に丸められる)
-                constexpr int start_idx = (req_start > min_bound) ? req_start : min_bound;
+                constexpr Index start_idx = (req_start > min_bound) ? req_start : min_bound;
                 
                 // end_idx = min(max_bound, req_end)
                 // (もし req_end が 100 なら、13 に丸められる)
-                constexpr int end_idx   = (req_end < max_bound) ? req_end : max_bound;
+                constexpr Index end_idx   = (req_end < max_bound) ? req_end : max_bound;
 
                 // 4. クリッピングされた安全な範囲でループ
                 // (もし start_idx >= end_idx ならループは実行されず、安全)
-                for (int i = start_idx; i < end_idx; ++i) {
+                for (Index i = start_idx; i < end_idx; ++i) {
                     set_value_sliced_helper<Func, Slices...>(func, indices..., i);
                 }
                 // --- (修正ここまで) ---
