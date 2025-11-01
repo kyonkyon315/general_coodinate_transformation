@@ -514,3 +514,7 @@ namespace Global{
     AdvectionEquation equation(dist_function,operators,advections,jacobian,scheme,boundary_condition);
 }
 #endif //CONFIG_H
+int main(){
+    Global::equation.solve<Axis_x_>(0.1);
+    return 0;
+}

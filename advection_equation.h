@@ -31,16 +31,16 @@ private:
                 //こんなことしなくても最適化で０の項はなくなるかも。
                 return 0.;
             }
-            return jacobian.get_element<Target_Dim,I>().at(indices...)
-                    *advections.get_object<I>().at(indices...);
+            return jacobian.template get_element<Target_Dim,I>().at(indices...)
+                    *advections.template get_object<I>().at(indices...);
         }
         else{
             if constexpr(std::is_same_v<E, Independent>){
                 //こんなことしなくても最適化で０の項はなくなるかも。
                 return advection_in_calc_space_helper<I+1,Target_Dim>(indices...);
             }
-            return jacobian.get_element<Target_Dim,I>().at(indices...)
-                    *advections.get_object<I>().at(indices...)
+            return jacobian.template get_element<Target_Dim,I>().at(indices...)
+                    *advections.template get_object<I>().at(indices...)
                     +advection_in_calc_space_helper<I+1,Target_Dim>(indices...);
         }
     }
@@ -56,12 +56,12 @@ private:
             constexpr int stencil_offsets[] = { (int(Is) + L) ... };
             Value advection = advection_in_calc_space<Target_Dim>(indices...);
             Value nyu = - dt * advection;
-            Value df = limiter.calc_df(Utility::arg_changer<Target_Dim,stencil_offsets[Is]>(target_func.at,indices...)...,
+            Value df = scheme.calc_df(Utility::arg_changer<Target_Dim,stencil_offsets[Is]>(target_func.at,indices...)...,
                             nyu);
             //dfをどうするかは後で考える。
         }
         else{
-            constexpr int axis_len = TargetFunction::sizes[Depth];
+            constexpr int axis_len = TargetFunction::shape[Depth];
             for(int i=0;i<axis_len;++i){
                 solve_helper<Depth+1,Dim,Target_Dim>(dt,indices...,i,std::make_index_sequence<R-L+1>{});
             }

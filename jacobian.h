@@ -1,23 +1,24 @@
 #ifndef JACOBIAN_H
 #define JACOBIAN_H
 #include <tuple>
+#include <string>
 #include <type_traits> // 型の確認用
 template<typename... Xi_diff_x>
 class Jacobian
 //Jacobian class 廃止予定　class Packの入れ子で実装した方がまとまる。
 {
 private:
-    using Table = typename std::tuple<const std::add_lvalue_reference_t<Xi_diff_x>...>;
+    using Table = std::tuple<const Xi_diff_x&...>;;
     const Table elements;
     static constexpr int num_args = sizeof...(Xi_diff_x);
+    // 依存コンテキストで平方数チェック ＆ sqrt(n) を決める
     static constexpr int num_label = []{
-        constexpr int n = sizeof...(Xi_diff_x);
-        for (int i = 1; i <= 20; ++i) {
-            if (i * i == n) return i;
+        for(int i = 0; i <= 20; ++i) {
+            if(i * i == num_args) return i;
         }
-        static_assert(false, "テンプレート引数の数は平方数である必要があります。");
-        return 0; // never reached
+        return 0;
     }();
+    static_assert(num_label*num_label==num_args,"template引数の数は平方数である必要があります");
 public:
     Jacobian(const Xi_diff_x&... args):
         elements(args...)
