@@ -468,7 +468,7 @@ public:
     static const int label = 3;
     template<typename Func>
     inline Value left(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp)const{
-        return func(calc_x_, calc_vr, calc_vt, -calc_vp);
+        return func(calc_x_, calc_vr, calc_vt, Axis_vp::num_grid-calc_vp);
     }
     template<typename Func>
     inline Value right(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp)const{
