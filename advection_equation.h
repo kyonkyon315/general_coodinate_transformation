@@ -7,7 +7,7 @@
 #include <utility>
 
 using Value = double;
-template<typename TargetFunction,typename Operators,typename Advections,typename Jacobian,typename Limiter>
+template<typename TargetFunction,typename Operators,typename Advections,typename Jacobian,typename Scheme,typename BoundaryCondition>
 class AdvectionEquation
 {
 private:
@@ -15,11 +15,12 @@ private:
     const Operators& operators;
     const Advections& advections;
     const Jacobian& jacobian;
-    const Limiter& limiter;
+    const Scheme& scheme;
+    const BoundaryCondition& boundary_condition;
 
     static constexpr int dimension = TargetFunction::get_dimension();
-    static constexpr int L = Limiter::used_id_left;
-    static constexpr int R = Limiter::used_id_right;
+    static constexpr int L = Scheme::used_id_left;
+    static constexpr int R = Scheme::used_id_right;
 
     //連鎖率を用いて、計算空間でのフラックスを計算します。
     template<int I,int Target_Dim>
@@ -51,7 +52,7 @@ private:
 
     template<int Depth,int Dim,int Target_Dim,typename... Ints, std::size_t... Is>
     void solve_helper(Value dt,Ints... indices,std::index_sequence<Is...>){
-        if constexpr(Depth+1==Dim){
+        if constexpr(Depth == Dim){
             constexpr int stencil_offsets[] = { (int(Is) + L) ... };
             Value advection = advection_in_calc_space<Target_Dim>(indices...);
             Value nyu = - dt * advection;
@@ -74,13 +75,15 @@ public:
         const Operators& operators,
         const Advections& advections,
         const Jacobian& jacobian,
-        const Limiter& limiter
+        const Scheme& scheme,
+        const BoundaryCondition& boundary_condition
     ):
         target_func(target_func),
         operators(operators),
         advections(advections),
         jacobian(jacobian),
-        limiter(limiter)
+        scheme(scheme),
+        boundary_condition(boundary_condition)
     {
         static_assert(target_func.get_dimension()==operators.get_num_objects());
         static_assert(target_func.get_dimension()==advections.get_num_objects());

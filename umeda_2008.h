@@ -145,5 +145,5 @@ public:
 
         return delta_f_i;
     }
-}
+};
 #endif //UMEDA_2008_H
