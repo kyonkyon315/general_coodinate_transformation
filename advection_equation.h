@@ -25,7 +25,7 @@ private:
     //連鎖率を用いて、計算空間でのフラックスを計算します。
     template<int I,int Target_Dim,typename... Ints>
     Value advection_in_calc_space_helper(Ints... indices){
-        using E = decltype(jacobian.get_element<Target_Dim,I>());
+        using E = typename Jacobian::element_t<Target_Dim,I>;
         if constexpr(I==dimension-1){
             if constexpr(std::is_same_v<E, Independent>){
                 //こんなことしなくても最適化で０の項はなくなるかも。

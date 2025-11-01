@@ -1,12 +1,14 @@
 #ifndef JACOBIAN_H
 #define JACOBIAN_H
 #include <tuple>
+#include <type_traits> // 型の確認用
 template<typename... Xi_diff_x>
 class Jacobian
 //Jacobian class 廃止予定　class Packの入れ子で実装した方がまとまる。
 {
 private:
-    std::tuple<const std::add_lvalue_reference_t<Xi_diff_x>...> elements;
+    using Table = typename std::tuple<const std::add_lvalue_reference_t<Xi_diff_x>...>;
+    const Table elements;
     static constexpr int num_args = sizeof...(Xi_diff_x);
     static constexpr int num_label = []{
         constexpr int n = sizeof...(Xi_diff_x);
@@ -25,5 +27,7 @@ public:
         return std::get<num_label*I+J>(elements);
     }
 
+    template<int I,int J>
+    using element_t = typename std::tuple_element_t<num_label*I+J, Table>;
 };
 #endif //JACOBIAN_H
