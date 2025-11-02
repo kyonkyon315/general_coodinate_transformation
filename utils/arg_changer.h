@@ -3,14 +3,13 @@
 #include <iostream>
 
 using Value = double;
+namespace Utility{
 namespace Arg_Changer{
 template <std::size_t target, int diff, typename Func, std::size_t... Is, typename... Ints>
 Value f_impl(Func func, std::index_sequence<Is...>, Ints... indices) {
     return func((Is == target ? (indices + diff) : indices)...);
 }
 }
-
-namespace Utility{
 //indicesのtarget番目を+diffしてからそれをfuncに代入してくれる関数です。
 template <std::size_t target, int diff, typename Func, typename... Ints>
 Value arg_changer(Func func, Ints... indices) {

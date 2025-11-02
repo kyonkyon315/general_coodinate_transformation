@@ -14,8 +14,8 @@ nyu = - v Δt/Δx
 f(i,t+Δt) = f(i,t) + U_(i-1/2)(nyu) - U_(i+1/2)(nyu)
 
 ただし、
-U_(i+1/2)(nyu) = nyu f(i) + nyu(1-nyu)(2-nyu)L_i_positive
-                            + nyu(1-nyu)(1+nyu)L_i_negative
+U_(i+1/2)(nyu) = nyu f(i) + nyu(1-nyu)(2-nyu)L_i_positive/6
+                            + nyu(1-nyu)(1+nyu)L_i_negative/6
 
 L_i_positive =  min[2(f_i - f_min), (f_i+1 - f_i)] if f_i+1 >= f_i
                 max[2(f_i - f_max), (f_i+1 - f_i)] else
@@ -70,9 +70,10 @@ private:
             L_neg = std::max(2.0*(f_min - f0), (f0 - fm1));
 
         Value U = (f0
-                + (1.0 - nyu)*(2.0 - nyu)*L_pos
-                + (1.0 - nyu)*(1.0 + nyu)*L_neg)*nyu;
-
+                + (1.0 - nyu)*(2.0 - nyu)*L_pos/6.
+                + (1.0 - nyu)*(1.0 + nyu)*L_neg/6.)*nyu;
+        //Value U = nyu*fp1+nyu*(1-nyu)*(2-nyu)*(fp1-f0)/6.
+        //                +nyu*(1-nyu)*(1+nyu)*(f0-fm1)/6.;//v>0のためのやつ
         return U;
     }
 
@@ -86,7 +87,7 @@ public:
      *********************************************************************************************/
     static const int used_id_left  = -3;
     static const int used_id_right =  3;
-    // 修正版：最悪ケースの7点を受け取り、符号に応じて正しいセンタリングを行う
+    // 修正版：最悪ケースの7点を受け取り、符号に応じて正しいセンタリングを行う      
     Value calc_df(
         Value f_im3, Value f_im2, Value f_im1,
         Value f_i,
@@ -95,52 +96,53 @@ public:
     )const{
         // nyu = - v * dt / dx の定義をそのまま使う
         // delta_f = U_{i-1/2} - U_{i+1/2}
+        nyu=-nyu;
         Value delta_f_i = 0.0;
 
         if (nyu >= 0.0) {
-            // 情報は左→右（upwind は 左 側。中心 f_i を使う）
-            // U_{i+1/2} に対する中心 i と stencil i-2..i+2
-            Value U_ip_half = calc_flux_rightward(
-                /*fm2*/ f_im2,
-                /*fm1*/ f_im1,
-                /*f0*/  f_i,
-                /*fp1*/ f_ip1,
-                /*fp2*/ f_ip2,
-                nyu
-            );
-            // U_{i-1/2} の中心は i-1 => stencil (i-3 .. i+1)
-            Value U_im_half = calc_flux_rightward(
-                /*fm2*/ f_im3,
-                /*fm1*/ f_im2,
-                /*f0*/  f_im1,
-                /*fp1*/ f_i,
-                /*fp2*/ f_ip1,
-                nyu
-            );
-            delta_f_i = U_im_half - U_ip_half;
-        } else {
-            // nyu < 0: 情報は右→左（upwind は 右 側）。中心を i+1 にシフトして再構築する。
-            Value abs_nyu = -nyu;
-
+            // nyu >= 0: 情報は右→左 (v <= 0) (upwind は 右 側)
             // U_{i+1/2} の中心は i+1 -> stencil (i-1 .. i+3)
             Value U_ip_half = calc_flux_rightward(
-                /*fm2*/ f_im1,  // (i+1)-2 = i-1
-                /*fm1*/ f_i,    // (i+1)-1 = i
-                /*f0*/  f_ip1,  // (i+1)
-                /*fp1*/ f_ip2,  // (i+2)
-                /*fp2*/ f_ip3,  // (i+3)
-                abs_nyu
+                /*fm2*/ f_im2,  
+                /*fm1*/ f_im1,    
+                /*f0*/  f_i,  
+                /*fp1*/ f_ip1,  
+                /*fp2*/ f_ip2,  
+                nyu // nyu は既に正
             );
             // U_{i-1/2} の中心は i -> stencil (i-2 .. i+2)
             Value U_im_half = calc_flux_rightward(
-                /*fm2*/ f_im2,  // i-2
-                /*fm1*/ f_im1,  // i-1
-                /*f0*/  f_i,    // i
-                /*fp1*/ f_ip1,  // i+1
-                /*fp2*/ f_ip2,  // i+2
-                abs_nyu
+                /*fm2*/ f_im3,  // i-2
+                /*fm1*/ f_im2,  // i-1
+                /*f0*/  f_im1,    // i
+                /*fp1*/ f_i,  // i+1
+                /*fp2*/ f_ip1,  // i+2
+                nyu // nyu は既に正
             );
             delta_f_i = U_im_half - U_ip_half;
+        } else {
+            // nyu < 0: 情報は左→右 (v > 0) (upwind は 左 側)
+            Value abs_nyu = -nyu; // calc_flux_rightward は正のnyuを期待するため
+
+            // U_{i+1/2} に対する中心 i と stencil i-2..i+2
+            Value U_ip_half = calc_flux_rightward(
+                /*fm2*/ f_ip3,
+                /*fm1*/ f_ip2,
+                /*f0*/  f_ip1,
+                /*fp1*/ f_i,
+                /*fp2*/ f_im1,
+                abs_nyu
+            );
+            // U_{i-1/2} の中心は i-1 => stencil (i-3 .. i+1)
+            Value U_im_half = calc_flux_rightward(
+                /*fm2*/ f_ip2,
+                /*fm1*/ f_ip1,
+                /*f0*/  f_i,
+                /*fp1*/ f_im1,
+                /*fp2*/ f_im2,
+                abs_nyu
+            );
+            delta_f_i = -U_im_half + U_ip_half;
         }
 
         return delta_f_i;

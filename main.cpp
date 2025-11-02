@@ -523,7 +523,7 @@ int main(){
     Value dt = 0.1;
     int num_steps = 100;
     for(int i=0;i<num_steps;i++){
-        
+        std::cout<<i<<std::endl;
         Global::equation.solve<Axis_vr>(dt/2.);
         Global::boundary_manager.apply<Axis_vr>();
         Global::equation.solve<Axis_vt>(dt/2.);

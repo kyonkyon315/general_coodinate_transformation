@@ -12,7 +12,8 @@
 #include <cmath>
 #include <tuple>      // スライス機能のために追加
 #include <type_traits> // スライス機能のために追加
-
+#include <fstream>
+#include <cstring>
 using Index = long long;
 
 // --- スライス用ヘルパー型 ---
@@ -218,6 +219,78 @@ public:
     }
 
     static constexpr int get_dimension(){return sizeof...(Axes);};
+
+    
+
+public:
+
+    void save_physical(const std::string& filename) const {
+        std::ofstream ofs(filename, std::ios::binary);
+        if (!ofs) throw std::runtime_error("Failed to open file for saving");
+
+        int64_t ndim = sizeof...(Axes);
+        ofs.write(reinterpret_cast<char*>(&ndim), sizeof(int64_t));
+
+        // write physical shape
+        for (int i = 0; i < ndim; ++i) {
+            int64_t s = shape[i];
+            ofs.write(reinterpret_cast<char*>(&s), sizeof(int64_t));
+        }
+        auto writer = [&](auto&& self, auto& idxs, size_t depth) -> void {
+            if (depth == ndim) {
+                std::apply([&](auto... ii){
+                    ofs.write(reinterpret_cast<const char*>(&this->at(ii...)), sizeof(T));
+                }, idxs);
+                return;
+            }
+            for (int i = 0; i < shape[depth]; ++i) {
+                idxs[depth] = i;
+                self(self, idxs, depth + 1);
+            }
+        };
+        std::array<int, sizeof...(Axes)> idxs{};
+        writer(writer, idxs, 0);
+    }
+
+
+    void load_physical(const std::string& filename) {
+        std::ifstream ifs(filename, std::ios::binary);
+        if (!ifs) throw std::runtime_error("Failed to open file for loading");
+        int64_t ndim = sizeof...(Axes);
+        int64_t ndim_file;
+        ifs.read(reinterpret_cast<char*>(&ndim_file), sizeof(int64_t));
+
+        if (ndim_file != sizeof...(Axes))
+            throw std::runtime_error("Dimension mismatch in load()");
+
+        for (int i = 0; i < ndim_file; ++i) {
+            int64_t s_file;
+            ifs.read(reinterpret_cast<char*>(&s_file), sizeof(int64_t));
+            if (s_file != shape[i])
+                throw std::runtime_error("Physical shape mismatch in load()");
+        }
+
+        // clear all (ghost & physical)
+        std::fill(data.begin(), data.end(), T{0});
+
+        // load only physical region
+        auto reader = [&](auto&& self, auto& idxs, size_t depth) -> void {
+            if (depth == ndim) {
+                std::apply([&](auto... ii){
+                    ifs.read(reinterpret_cast<char*>(&this->at(ii...)), sizeof(T));
+                }, idxs);
+                return;
+            }
+            for (int i = 0; i < shape[depth]; ++i) {
+                idxs[depth] = i;
+                self(self, idxs, depth + 1);
+            }
+        };
+
+        std::array<int, sizeof...(Axes)> idxs{};
+        reader(reader, idxs, 0);
+    }
+
 };
 
 // クラステンプレート引数の推論補助 (CTAD)
