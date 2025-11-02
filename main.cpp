@@ -16,7 +16,7 @@ using namespace std;
 //通し番号は重複することなく、互いに隣り合った0以上の整数である必要があります。また、0を含む必要があります。
 //計算空間の軸なので、一律Δx=1であり、軸同士は直交しています。
 //最後の3,3 >はゴーストセルのグリッド数です。
-using Axis_x_ = Axis<0,1000,3,3>;
+using Axis_x_ = Axis<0,100,3,3>;
 using Axis_vr = Axis<1,100,3,3>;
 using Axis_vt = Axis<2,100,3,3>;
 using Axis_vp = Axis<3,100,3,3>;
@@ -399,11 +399,11 @@ class BoundaryCondition_x_
 public:
     static const int label = 0;
     template<typename Func>
-    inline Value left(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp)const{
+    static Value left(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp){
         return func(-calc_x_, calc_vr, calc_vt, calc_vp);
     }
     template<typename Func>
-    inline Value right(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp)const{
+    static Value right(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp){
         return func(calc_x_ - Axis_x_::num_grid, calc_vr, calc_vt, calc_vp);
     }
 };
@@ -413,7 +413,7 @@ class BoundaryCondition_vr
 public:
     static const int label = 1;
     template<typename Func>
-    inline Value left(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp)const{
+    static Value left(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp){
         static_assert(Axis_vp::num_grid%2 == 0,"v_phy空間のグリッド数は偶数である必要がある");
         constexpr int vp_half_num_grid=Axis_vp::num_grid/2;
         const int index_vp=(
@@ -426,7 +426,7 @@ public:
 
     //物理的におかしいけど、とりあえずこうしておく
     template<typename Func>
-    inline Value right(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp)const{
+    static Value right(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp){
         return func(calc_x_, 2*Axis_vr::num_grid-calc_vr-1, calc_vt, calc_vp);
     }
 };
@@ -437,7 +437,7 @@ class BoundaryCondition_vt
 public:
     static const int label = 2;
     template<typename Func>
-    inline Value left(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp)const{
+    static Value left(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp){
         static_assert(Axis_vp::num_grid%2 == 0,"v_phy空間のグリッド数は偶数である必要がある");
         constexpr int vp_half_num_grid=Axis_vp::num_grid/2;
         const int index_vp=(
@@ -448,7 +448,7 @@ public:
         return func(calc_x_, calc_vr, -calc_vt-1, index_vp);
     }
     template<typename Func>
-    inline Value right(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp)const{
+    static Value right(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp){
         static_assert(Axis_vp::num_grid%2 == 0,"v_phy空間のグリッド数は偶数である必要がある");
         constexpr int vp_half_num_grid=Axis_vp::num_grid/2;
         const int index_vp=(
@@ -467,11 +467,11 @@ class BoundaryCondition_vp
 public:
     static const int label = 3;
     template<typename Func>
-    inline Value left(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp)const{
+    static Value left(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp){
         return func(calc_x_, calc_vr, calc_vt, Axis_vp::num_grid-calc_vp);
     }
     template<typename Func>
-    inline Value right(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp)const{
+    static Value right(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp){
         return func(calc_x_, calc_vr, calc_vt, calc_vp- Axis_vp::num_grid);
     }
 };
@@ -491,7 +491,14 @@ namespace Global{
         boundary_condition_vp
     );
 }
+/*----------------------------------------------------------------------------
+ * ターゲットとなる関数とboundary_conditionを用いてboundary_managerを作成します。
+ *---------------------------------------------------------------------------*/
+#include "boundary_manager.h"
 
+namespace Global{
+    BoundaryManager boundary_manager(dist_function,boundary_condition);
+}
 
 
 /****************************************************************************
@@ -513,25 +520,24 @@ namespace Global{
 }
 #include "Timer.h"
 int main(){
-        for(int i=0;i<10;i++){
-        std::cout<<"start"<<std::endl;
-        Timer timer;
-        timer.start();
-        Global::equation.solve<Axis_x_>(0.1);
-        timer.stop();
-        std::cout<<timer<<"\n";
-        timer.start();
-        Global::equation.solve<Axis_vr>(0.1);
-        timer.stop();
-        std::cout<<timer<<"\n";
-        timer.start();
-        Global::equation.solve<Axis_vt>(0.1);
-        timer.stop();
-        std::cout<<timer<<"\n";
-        timer.start();
-        Global::equation.solve<Axis_vp>(0.1);
-        timer.stop();
-        std::cout<<timer<<"\n";
+    Value dt = 0.1;
+    int num_steps = 100;
+    for(int i=0;i<num_steps;i++){
+        
+        Global::equation.solve<Axis_vr>(dt/2.);
+        Global::boundary_manager.apply<Axis_vr>();
+        Global::equation.solve<Axis_vt>(dt/2.);
+        Global::boundary_manager.apply<Axis_vt>();
+        Global::equation.solve<Axis_vp>(dt/2.);
+        Global::boundary_manager.apply<Axis_vp>();
+        Global::equation.solve<Axis_x_>(dt);
+        Global::boundary_manager.apply<Axis_x_>();
+        Global::equation.solve<Axis_vp>(dt/2.);
+        Global::boundary_manager.apply<Axis_vp>();
+        Global::equation.solve<Axis_vt>(dt/2.);
+        Global::boundary_manager.apply<Axis_vt>();
+        Global::equation.solve<Axis_vr>(dt/2.);
+        Global::boundary_manager.apply<Axis_vr>();
     }
     return 0;
 }

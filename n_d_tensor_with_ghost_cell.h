@@ -103,36 +103,36 @@ private:
 
 
     // set_value の再帰ヘルパー (物理領域のみ)
-    template<typename Func, size_t Dim = 0, typename... Idx>
+    template<typename Func, size_t Depth = 0, typename... Idx>
     void set_value_helper(Func func, Idx... indices) {
         
-        if constexpr (Dim == sizeof...(Axes)) {
+        if constexpr (Depth == sizeof...(Axes)) {
             this->at(indices...) = func(indices...);
         }
         else {
-            for (Index i = 0; i < shape[Dim]; ++i) { // 物理領域 (0 .. shape-1)
-                set_value_helper<Func, Dim + 1>(func, indices..., i);
+            for (Index i = 0; i < shape[Depth]; ++i) { // 物理領域 (0 .. shape-1)
+                set_value_helper<Func, Depth + 1>(func, indices..., i);
             }
         }
     }
 
 
     // set_value_sliced のための再帰ヘルパー
-    template<typename Func, typename... Slices, size_t Dim = 0, typename... Idx>
+    template<size_t Depth,typename Func, typename... Slices, typename... Idx>
     void set_value_sliced_helper(Func func, Idx... indices) {
         
         // 基底ケース
-        if constexpr (Dim == sizeof...(Axes)) {
+        if constexpr (Depth == sizeof...(Axes)) {
             this->at(indices...) = func(indices...);
         }
         // 再帰ステップ
         else {
-            using CurrentSlice = std::tuple_element_t<Dim, std::tuple<Slices...>>;
+            using CurrentSlice = std::tuple_element_t<Depth, std::tuple<Slices...>>;
 
             if constexpr (std::is_same_v<CurrentSlice, FullSlice>) {
                 // (A) FullSlice の場合: 物理領域 [0, shape[Dim]) をループ
-                for (int i = 0; i < shape[Dim]; ++i) {
-                    set_value_sliced_helper<Func, Slices...>(func, indices..., i);
+                for (int i = 0; i < shape[Depth]; ++i) {
+                    set_value_sliced_helper<Depth+1,Func, Slices...>(func, indices..., i);
                 }
             } 
             else {
@@ -145,8 +145,8 @@ private:
                 constexpr Index req_end   = CurrentSlice::END_val;
 
                 // 2. この次元の安全な境界（確保されたメモリ全体）を取得
-                constexpr Index min_bound = -L_ghost_lengths[Dim];                // 例: -3
-                constexpr Index max_bound = shape[Dim] + R_ghost_lengths[Dim];    // 例: 10 + 3 = 13
+                constexpr Index min_bound = -L_ghost_lengths[Depth];                // 例: -3
+                constexpr Index max_bound = shape[Depth] + R_ghost_lengths[Depth];    // 例: 10 + 3 = 13
 
                 // 3. ユーザーの要求を、安全な境界内に自動クリッピング
                 
@@ -161,7 +161,7 @@ private:
                 // 4. クリッピングされた安全な範囲でループ
                 // (もし start_idx >= end_idx ならループは実行されず、安全)
                 for (Index i = start_idx; i < end_idx; ++i) {
-                    set_value_sliced_helper<Func, Slices...>(func, indices..., i);
+                    set_value_sliced_helper<Depth+1,Func, Slices...>(func, indices..., i);
                 }
                 // --- (修正ここまで) ---
             }
@@ -175,6 +175,12 @@ public:
     }
     NdTensorWithGhostCell(){
         data.resize(total_size);
+    }
+
+    void add(const NdTensorWithGhostCell& r){
+        for(Index i=0;i<total_size;++i){
+            data[i]+=r.data[i];
+        }
     }
     
     // at() アクセサ
@@ -208,7 +214,7 @@ public:
         static_assert(sizeof...(Slices) == sizeof...(Axes), 
             "set_value_sliced: 次元数とスライス型の数が一致しません");
         
-        set_value_sliced_helper<Func, Slices...>(func);
+        set_value_sliced_helper<0,Func, Slices...>(func);
     }
 
     static constexpr int get_dimension(){return sizeof...(Axes);};

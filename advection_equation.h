@@ -13,6 +13,7 @@ class AdvectionEquation
 {
 private:
     TargetFunction& target_func;
+    TargetFunction func_buffer;
     const Operators& operators;
     const Advections& advections;
     const Jacobian& jacobian;
@@ -57,7 +58,7 @@ private:
         if constexpr(Depth == Dim){
             // leaf を呼ぶ（戻り値使うなら受け取る）
             Value df = solve_leaf<Target_Dim>(dt, indices...);
-            target_func.at(indices...)+=df;
+            func_buffer.at(indices...)=df;
         }
         else if constexpr(Depth==0){
             constexpr int axis_len = TargetFunction::shape[Depth];
@@ -131,6 +132,7 @@ public:
         constexpr int target_dim = CalcAxis::label;
         // 初期呼び出しは indices を持たない
         solve_helper<0, dimension, target_dim>(dt);
+        target_func.add(func_buffer);
     }
 };
 #endif //ADVECTION_EQUATION_H
