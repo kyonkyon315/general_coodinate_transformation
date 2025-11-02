@@ -56,11 +56,12 @@ private:
     template<int Depth,int Dim,int Target_Dim,typename... Ints>
     void solve_helper(Value dt, Ints... indices){
         if constexpr(Depth == Dim){
-            // leaf を呼ぶ（戻り値使うなら受け取る）
-            Value df = solve_leaf<Target_Dim>(dt, indices...);
-            func_buffer.at(indices...)=df;
+            const Value df = solve_leaf<Target_Dim>(dt, indices...);
+            //増加分を保存
+            func_buffer.at(indices...) = df;
         }
         else if constexpr(Depth==0){
+            //[@TODO]Dim==1のときはomp発動しないようにした方がいいかも。
             constexpr int axis_len = TargetFunction::shape[Depth];
             #pragma omp parallel for
             for(int i=0;i<axis_len;++i){
@@ -130,8 +131,10 @@ public:
     template<typename CalcAxis>
     void solve(Value dt){
         constexpr int target_dim = CalcAxis::label;
-        // 初期呼び出しは indices を持たない
+        // dfを計算してfunc_bufferに格納
         solve_helper<0, dimension, target_dim>(dt);
+
+        //dfをfに足し込む（関数の更新）
         target_func.add(func_buffer);
     }
 };

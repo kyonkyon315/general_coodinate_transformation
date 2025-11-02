@@ -1,6 +1,6 @@
 a.out
 .venv/
 visualizer/.venv/
-.bin
-.gif
-.mp4
+data/
+*.gif
+*.mp4

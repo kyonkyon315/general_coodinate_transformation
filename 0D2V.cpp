@@ -16,23 +16,19 @@ using namespace std;
 //通し番号は重複することなく、互いに隣り合った0以上の整数である必要があります。また、0を含む必要があります。
 //計算空間の軸なので、一律Δx=1であり、軸同士は直交しています。
 //最後の3,3 >はゴーストセルのグリッド数です。
-using Axis_x_ = Axis<0,100,3,3>;
-using Axis_v_ = Axis<1,100,3,3>;
+using Axis_vr = Axis<0,100,3,3>;
+using Axis_vt = Axis<1,100,3,3>;
 
 //電子分布関数の型を定義
 //先頭に入力する型はテンソルの値の型です。その後に続く軸は、通し番号が小さいものほど左に入力してください。
-using DistributionFunction = NdTensorWithGhostCell<Value,Axis_x_,Axis_v_>;
-
-//電場の型を定義
-using ElectricField = NdTensorWithGhostCell<Vec3<Value>,Axis_x_>;
+using DistributionFunction = NdTensorWithGhostCell<Value,Axis_vr,Axis_vt>;
 
 //磁場の型を定義
-using MagneticField = NdTensorWithGhostCell<Vec3<Value>,Axis_x_>;
+using MagneticField = Vec3<Value>;
 
 //グローバル変数としてインスタンス化しておく。
 namespace Global{
     DistributionFunction dist_function;
-    ElectricField e_field;
     MagneticField m_field;
 }
 
@@ -41,35 +37,48 @@ namespace Global{
  ***********************************************/
 
 // --- グローバル定数とヘルパー関数の定義 ---
+const Value grid_size_vr = 0.6;
+const Value grid_size_vt = 2.*M_PI / (double)(Axis_vt::num_grid+1);
 
-constexpr Value grid_size_x_ = 3.;
-const Value grid_size_v_ = 4.;
-
-Value v(int calc_v_){ return grid_size_v_ * (0.5 + (double)calc_v_);}
+Value vr(int calc_vr){ return grid_size_vr * (0.5 + (double)calc_vr);}
+Value vt(int calc_vt){ return grid_size_vt * (0.5 + (double)calc_vt);}
 
 
-// --- 物理量クラス ---
+
+// --- 物理座標クラス ---
 //honestly_translateで計算座標↔物理座標の変換の式を定義します。
 //それを用いてコンストラクタで各場所での値を事前計算してテーブルに格納します。（table.set_value(honestly_translate))
 //シミュレーション中はテーブルを参照します。
 //こちらも計算軸クラスと同様に通し番号を設定します。
 
-class Physic_x_
+class Physic_vx
 {
+private:
+    NdTensor<Value,Axis_vr,Axis_vt> table;
+    static Value honestly_translate(int calc_vr,int calc_vt){
+        // v_x = vr * cos(vt)
+        return vr(calc_vr) * cos(vt(calc_vt));
+    }
 public:
-    Physic_x_(){}
-    Value translate(int calc_x,int calc_vr)const{
-        return grid_size_x_*calc_x;
+    Physic_vx(){table.set_value(honestly_translate);}
+    Value translate(int calc_vr,int calc_vt)const{
+        return table.at(calc_vr,calc_vt);    
     }
     static const int label = 0;
 };
 
-class Physic_v_
+class Physic_vy
 {
+private:
+    NdTensor<Value,Axis_vr,Axis_vt> table;
+    static Value honestly_translate(int calc_vr,int calc_vt){
+        // v_y = vr * sin(vt) 
+        return vr(calc_vr) * sin(vt(calc_vt));
+    }
 public:
-    Physic_v_(){}
-    Value translate(int calc_x_,int calc_v_)const{
-        return v(calc_v_);    
+    Physic_vy(){table.set_value(honestly_translate);}
+    Value translate(int calc_vr,int calc_vt)const{
+        return table.at(calc_vr,calc_vt);    
     }
     static const int label = 1;
 };
@@ -77,8 +86,8 @@ public:
 
 //グローバル変数としてインスタンス化しておく。
 namespace Global{
-    Physic_x_ physic_x_;
-    Physic_v_ physic_v_;
+    Physic_vx physic_vx;
+    Physic_vy physic_vy;
 }
 /***********************************************
  * 計算軸を物理軸で微分した値の関数を書きます　(始)*
@@ -86,32 +95,51 @@ namespace Global{
 
 
 
-class X__diff_x_
+class Vr_diff_vx
 {
 public:
-    X__diff_x_(){}
-    Value at(int calc_x_,int calc_v_)const{
-        return 1./grid_size_x_;
+    Vr_diff_vx(){}
+    Value at(int calc_vr,int calc_vt)const{
+        return std::cos(vt(calc_vt))/(double)grid_size_vr;
     }
 };
 
-class V__diff_v_
+class Vr_diff_vy
 {
 public:
-    V__diff_v_(){}
-    Value at(int calc_x_,int calc_v_)const{
-        return 1./grid_size_v_;
+    Vr_diff_vy(){}
+    Value at(int calc_vr,int calc_vt)const{
+        return std::sin(vt(calc_vt))/(double)grid_size_vr;
     }
 };
 
+class Vt_diff_vx
+{
+public:
+    Vt_diff_vx(){}
+    Value at(int calc_vr,int calc_vt)const{
+        return - std::sin(vt(calc_vt))/(vr(calc_vr)*(double)grid_size_vt);
+    }
+};
+
+class Vt_diff_vy
+{
+public:
+    Vt_diff_vy(){}
+    Value at(int calc_vr,int calc_vt)const{
+        return  std::cos(vt(calc_vt))/(vr(calc_vr)*(double)grid_size_vt);
+    }
+};
 
 
 #include "independent.h"
 //グローバル変数としてインスタンス化
 namespace Global{
     const Independent independent;
-    const X__diff_x_ x__diff_x_;
-    const V__diff_v_ v__diff_v_;
+    const Vr_diff_vx vr_diff_vx;
+    const Vr_diff_vy vr_diff_vy;
+    const Vt_diff_vx vt_diff_vx;
+    const Vt_diff_vy vt_diff_vy;
 }
 
 /*******************************************************************
@@ -124,43 +152,43 @@ namespace Global{
 #include "jacobian.h"
 namespace Global{
 Jacobian jacobian(
-    x__diff_x_ , independent, 
-    independent, v__diff_v_ 
+    vr_diff_vx , vr_diff_vy,  
+    vt_diff_vx , vt_diff_vy 
 );
 }
 /*******************************************
  * 解くべき移流方程式を定義します。           *
- * df/dt + v_x df/dx + q/m(E+v*B)・∇_v f = 0 *
+ * df/dt + q/m(v*B)・∇_v f = 0 *
  * を例に定義の仕方を解説                    *
  *******************************************/
 
 //移流項の定義
 //------------------------------------------
-// 1. v_x * df/dx
+// 1. q/m (E + v×B)_x
 //------------------------------------------
-class Fx_ {
+class Fvx {
 public:
-    Fx_(){}
-    Value at(int calc_x_, int calc_vr) const {
-        return Global::physic_v_.translate(calc_x_, calc_vr);
+    Fvx(){}
+    Value at(int calc_vr, int calc_vt) const {
+        const Value vy = Global::physic_vy.translate(calc_vr, calc_vt);
+        return Q/m*vy*Global::m_field.z;
     }
 };
 
 //------------------------------------------
 // 2. q/m (E + v×B)_x
 //------------------------------------------
-class Fv_ {
-private:
+class Fvy {
 public:
-    Fv_(){}
-
-    Value at(int calc_x_, int calc_vr) const {
-        return Q/m * (      Global::e_field.at(calc_x_).x );
+    Fvy(){}
+    Value at(int calc_vr, int calc_vt) const {
+        const Value vx = Global::physic_vx.translate(calc_vr, calc_vt);
+        return -Q/m*vx*Global::m_field.z;
     }
 };
 namespace Global{
-    Fx_ flux_x_;
-    Fv_ flux_v_;
+    Fvx flux_vx;
+    Fvy flux_vy;
 }
 
 /****************************************************************************
@@ -188,34 +216,45 @@ namespace Global{
  * Axes と同様、labelを付けます。
  * 
  ****************************************************************************/
-//xは周期境界条件
-class BoundaryCondition_x_
+
+class BoundaryCondition_vr
 {
 public:
     static const int label = 0;
     template<typename Func>
-    static Value left(Func func,int calc_x_, int calc_v_){
-        return func(-calc_x_, calc_v_);
-    }
-    template<typename Func>
-    static Value right(Func func,int calc_x_, int calc_v_){
-        return func(calc_x_ - Axis_x_::num_grid, calc_v_);
-    }
-};
-
-class BoundaryCondition_v_
-{
-public:
-    static const int label = 1;
-    template<typename Func>
-    static Value left(Func func,int calc_x_, int calc_v_){
-        return func(calc_x_, -calc_v_);
+    static Value left(Func func,int calc_vr, int calc_vt){
+        static_assert(Axis_vt::num_grid%2 == 0,"v_theta空間のグリッド数は偶数である必要がある");
+        constexpr int vt_half_num_grid=Axis_vt::num_grid/2;
+        const int index_vt=(
+            calc_vt < vt_half_num_grid ? 
+            calc_vt+vt_half_num_grid
+            :calc_vt-vt_half_num_grid
+        );
+        //std::cout<<func(-calc_vr-1, index_vt);
+        //std::cout<<"("<<-calc_vr-1<<","<< index_vt<<") "<<std::flush;
+        return func(-calc_vr-1, index_vt);
     }
 
     //物理的におかしいけど、とりあえずこうしておく
     template<typename Func>
-    static Value right(Func func,int calc_x_, int calc_v_){
-        return func(calc_x_, calc_v_-Axis_x_::num_grid);
+    static Value right(Func func,int calc_vr, int calc_vt){
+        return 0.;
+        //return func(calc_vr, calc_v_-Axis_x_::num_grid);
+    }
+};
+
+//thetaは周期境界条件
+class BoundaryCondition_vt
+{
+public:
+    static const int label = 1;
+    template<typename Func>
+    static Value left(Func func,int calc_vr, int calc_vt){
+        return func(calc_vr,Axis_vt::num_grid+calc_vt);
+    }
+    template<typename Func>
+    static Value right(Func func,int calc_vr, int calc_vt){
+        return func(calc_vr,calc_vt - Axis_vt::num_grid);
     }
 };
 
@@ -223,12 +262,12 @@ public:
  * Pack を用いて境界条件をまとめます。
  *----------------------------------------------*/
 namespace Global{
-    BoundaryCondition_x_ boundary_condition_x_;
-    BoundaryCondition_v_ boundary_condition_v_;
+    BoundaryCondition_vr boundary_condition_vr;
+    BoundaryCondition_vt boundary_condition_vt;
     
     Pack boundary_condition(
-        boundary_condition_x_,
-        boundary_condition_v_
+        boundary_condition_vr,
+        boundary_condition_vt
     );
 }
 /*----------------------------------------------------------------------------
@@ -254,22 +293,47 @@ namespace Global{
 
 #include "advection_equation.h"
 namespace Global{
-    Pack operators(physic_x_,physic_v_);
-    Pack advections(flux_x_,flux_v_);
+    Pack operators(physic_vx,physic_vy);
+    Pack advections(flux_vx,flux_vy);
     AdvectionEquation equation(dist_function,operators,advections,jacobian,scheme,boundary_condition);
 }
 #include "Timer.h"
+Value gauss(Value x,Value y){
+    Value sigma = 25.;
+    Value m_x = 40.;
+    Value m_y =  0.;
+    return std::exp(-((x-m_x)*(x-m_x)+(y-m_y)*(y-m_y))/sigma);
+}
+#include "projected_saver_2D.hpp"
+
+ProjectedSaver2D saver(
+    Global::dist_function,
+    Global::physic_vx, Global::physic_vy,
+    Axis_vr{}, Axis_vt{}
+);
+
 int main(){
-    Value dt = 0.1;
+    Value dt = 0.5;
     int num_steps = 100;
+    Global::dist_function.set_value(
+        [](int calc_vr,int calc_vt){
+            Value vx = Global::physic_vx.translate(calc_vr,calc_vt);
+            Value vy = Global::physic_vy.translate(calc_vr,calc_vt);
+            return gauss(vx,vy);
+        }
+    );
+    //Global::dist_function.at(20,20)=5.;
+    Global::m_field.z=m/Q/10.;
     for(int i=0;i<num_steps;i++){
+        saver.save("data/0D2V/"+std::to_string(i)+".bin");
         std::cout<<i<<std::endl;
-        Global::equation.solve<Axis_v_>(dt/2.);
-        Global::boundary_manager.apply<Axis_v_>();
-        Global::equation.solve<Axis_x_>(dt);
-        Global::boundary_manager.apply<Axis_x_>();
-        Global::equation.solve<Axis_v_>(dt/2.);
-        Global::boundary_manager.apply<Axis_v_>();
+        Global::equation.solve<Axis_vr>(dt/2.);
+        Global::boundary_manager.apply<Axis_vr>();
+        Global::equation.solve<Axis_vt>(dt);
+        Global::boundary_manager.apply<Axis_vt>();
+        Global::equation.solve<Axis_vr>(dt/2.);
+        Global::boundary_manager.apply<Axis_vr>();
+        //saver.save("data/0D2V/"+std::to_string(i)+".bin");
     }
     return 0;
 }
