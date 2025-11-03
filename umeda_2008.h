@@ -94,9 +94,8 @@ public:
         Value f_ip1, Value f_ip2, Value f_ip3,
         Value nyu
     )const{
-        // nyu = - v * dt / dx の定義をそのまま使う
-        // delta_f = U_{i-1/2} - U_{i+1/2}
-        nyu=-nyu;
+        
+        nyu=-nyu;//なぜかnyuを反転しないと逆になってしまう。
         Value delta_f_i = 0.0;
 
         if (nyu >= 0.0) {

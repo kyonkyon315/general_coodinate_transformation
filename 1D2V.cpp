@@ -299,7 +299,7 @@ namespace Global{
 }
 #include "Timer.h"
 Value gauss(Value x,Value y){
-    Value sigma = 25.;
+    Value sigma = 100.;
     Value m_x = 40.;
     Value m_y =  0.;
     return std::exp(-((x-m_x)*(x-m_x)+(y-m_y)*(y-m_y))/sigma);

@@ -16,12 +16,12 @@ using namespace std;
 //通し番号は重複することなく、互いに隣り合った0以上の整数である必要があります。また、0を含む必要があります。
 //計算空間の軸なので、一律Δx=1であり、軸同士は直交しています。
 //最後の3,3 >はゴーストセルのグリッド数です。
-using Axis_vr = Axis<0,100,3,3>;
-using Axis_vt = Axis<1,300,3,3>;
+using Axis_vx = Axis<0,200,3,3>;
+using Axis_vy = Axis<1,200,3,3>;
 
 //電子分布関数の型を定義
 //先頭に入力する型はテンソルの値の型です。その後に続く軸は、通し番号が小さいものほど左に入力してください。
-using DistributionFunction = NdTensorWithGhostCell<Value,Axis_vr,Axis_vt>;
+using DistributionFunction = NdTensorWithGhostCell<Value,Axis_vx,Axis_vy>;
 
 //磁場の型を定義
 using MagneticField = Vec3<Value>;
@@ -37,11 +37,11 @@ namespace Global{
  ***********************************************/
 
 // --- グローバル定数とヘルパー関数の定義 ---
-const Value grid_size_vr = 0.6;
-const Value grid_size_vt = 2.*M_PI / (double)(Axis_vt::num_grid);
+const Value grid_size_vx = 0.6;
+const Value grid_size_vy = 0.6;
 
-Value vr(int calc_vr){ return grid_size_vr * (0.5 + (double)calc_vr);}
-Value vt(int calc_vt){ return grid_size_vt * (0.5 + (double)calc_vt);}
+Value vx(int calc_vx){ return grid_size_vx * (double)(calc_vx-Axis_vx::num_grid/2);}
+Value vy(int calc_vy){ return grid_size_vy * (double)(calc_vy-Axis_vy::num_grid/2);}
 
 
 
@@ -53,16 +53,15 @@ Value vt(int calc_vt){ return grid_size_vt * (0.5 + (double)calc_vt);}
 
 class Physic_vx
 {
-    NdTensor<Value,Axis_vr,Axis_vt> table;
 public:
-    static Value honestly_translate(int calc_vr,int calc_vt){
+    static Value honestly_translate(int calc_vx,int calc_vy){
         // v_x = vr * cos(vt)
-        return vr(calc_vr) * cos(vt(calc_vt));
+        return vx(calc_vx);
     }
 
-    Physic_vx(){table.set_value(honestly_translate);}
-    Value translate(int calc_vr,int calc_vt)const{
-        return table.at(calc_vr,calc_vt);    
+    Physic_vx(){}
+    Value translate(int calc_vx,int calc_vy)const{
+        return vx(calc_vx);    
     }
     static const int label = 0;
 };
@@ -70,15 +69,14 @@ public:
 class Physic_vy
 {
 private:
-    NdTensor<Value,Axis_vr,Axis_vt> table;
 public:
-    static Value honestly_translate(int calc_vr,int calc_vt){
+    static Value honestly_translate(int calc_vx,int calc_vy){
         // v_y = vr * sin(vt) 
-        return vr(calc_vr) * sin(vt(calc_vt));
+        return vy(calc_vy);
     }
-    Physic_vy(){table.set_value(honestly_translate);}
-    Value translate(int calc_vr,int calc_vt)const{
-        return table.at(calc_vr,calc_vt);    
+    Physic_vy(){}
+    Value translate(int calc_vx,int calc_vy)const{
+        return vy(calc_vy);    
     }
     static const int label = 1;
 };
@@ -95,39 +93,21 @@ namespace Global{
 
 
 
-class Vr_diff_vx
+class Vx_diff_vx
 {
 public:
-    Vr_diff_vx(){}
-    Value at(int calc_vr,int calc_vt)const{
-        return std::cos(vt(calc_vt))/(double)grid_size_vr;
+    Vx_diff_vx(){}
+    Value at(int calc_vx,int calc_vy)const{
+        return 1./(double)grid_size_vx;
     }
 };
 
-class Vr_diff_vy
+class Vy_diff_vy
 {
 public:
-    Vr_diff_vy(){}
-    Value at(int calc_vr,int calc_vt)const{
-        return std::sin(vt(calc_vt))/(double)grid_size_vr;
-    }
-};
-
-class Vt_diff_vx
-{
-public:
-    Vt_diff_vx(){}
-    Value at(int calc_vr,int calc_vt)const{
-        return - std::sin(vt(calc_vt))/(vr(calc_vr)*(double)grid_size_vt);
-    }
-};
-
-class Vt_diff_vy
-{
-public:
-    Vt_diff_vy(){}
-    Value at(int calc_vr,int calc_vt)const{
-        return  std::cos(vt(calc_vt))/(vr(calc_vr)*(double)grid_size_vt);
+    Vy_diff_vy(){}
+    Value at(int calc_vx,int calc_vy)const{
+        return 1./(double)grid_size_vy;
     }
 };
 
@@ -136,10 +116,8 @@ public:
 //グローバル変数としてインスタンス化
 namespace Global{
     const Independent independent;
-    const Vr_diff_vx vr_diff_vx;
-    const Vr_diff_vy vr_diff_vy;
-    const Vt_diff_vx vt_diff_vx;
-    const Vt_diff_vy vt_diff_vy;
+    const Vx_diff_vx vx_diff_vx;
+    const Vy_diff_vy vy_diff_vy;
 }
 
 /*******************************************************************
@@ -152,8 +130,8 @@ namespace Global{
 #include "jacobian.h"
 namespace Global{
 Jacobian jacobian(
-    vr_diff_vx , vr_diff_vy,  
-    vt_diff_vx , vt_diff_vy 
+    vx_diff_vx  , independent,  
+    independent , vy_diff_vy 
 );
 }
 /*******************************************
@@ -169,8 +147,8 @@ Jacobian jacobian(
 class Fvx {
 public:
     Fvx(){}
-    Value at(int calc_vr, int calc_vt) const {
-        const Value vy = Global::physic_vy.translate(calc_vr, calc_vt);
+    Value at(int calc_vx, int calc_vy) const {
+        const Value vy = Global::physic_vy.translate(calc_vx, calc_vy);
         return Q/m*vy*Global::m_field.z;
     }
 };
@@ -181,8 +159,8 @@ public:
 class Fvy {
 public:
     Fvy(){}
-    Value at(int calc_vr, int calc_vt) const {
-        const Value vx = Global::physic_vx.translate(calc_vr, calc_vt);
+    Value at(int calc_vx, int calc_vy) const {
+        const Value vx = Global::physic_vx.translate(calc_vx, calc_vy);
         return -Q/m*vx*Global::m_field.z;
     }
 };
@@ -217,44 +195,35 @@ namespace Global{
  * 
  ****************************************************************************/
 
-class BoundaryCondition_vr
+class BoundaryCondition_vx
 {
 public:
     static const int label = 0;
+    //物理的におかしいけど、とりあえずこうしておく
     template<typename Func>
-    static Value left(Func func,int calc_vr, int calc_vt){
-        static_assert(Axis_vt::num_grid%2 == 0,"v_theta空間のグリッド数は偶数である必要がある");
-        constexpr int vt_half_num_grid=Axis_vt::num_grid/2;
-        const int index_vt=(
-            calc_vt < vt_half_num_grid ? 
-            calc_vt+vt_half_num_grid
-            :calc_vt-vt_half_num_grid
-        );
-        //std::cout<<func(-calc_vr-1, index_vt);
-        //std::cout<<"("<<-calc_vr-1<<","<< index_vt<<") "<<std::flush;
-        return func(-calc_vr-1, index_vt);
+    static Value left(Func func,int calc_vx, int calc_vy){
+        return 0.;
     }
 
     //物理的におかしいけど、とりあえずこうしておく
     template<typename Func>
-    static Value right(Func func,int calc_vr, int calc_vt){
+    static Value right(Func func,int calc_vx, int calc_vy){
         return 0.;
-        //return func(calc_vr, calc_v_-Axis_x_::num_grid);
     }
 };
 
 //thetaは周期境界条件
-class BoundaryCondition_vt
+class BoundaryCondition_vy
 {
 public:
     static const int label = 1;
     template<typename Func>
-    static Value left(Func func,int calc_vr, int calc_vt){
-        return func(calc_vr,Axis_vt::num_grid+calc_vt);
+    static Value left(Func func,int calc_vx, int calc_vy){
+        return 0.;
     }
     template<typename Func>
-    static Value right(Func func,int calc_vr, int calc_vt){
-        return func(calc_vr,calc_vt - Axis_vt::num_grid);
+    static Value right(Func func,int calc_vx, int calc_vy){
+        return 0.;
     }
 };
 
@@ -262,12 +231,12 @@ public:
  * Pack を用いて境界条件をまとめます。
  *----------------------------------------------*/
 namespace Global{
-    BoundaryCondition_vr boundary_condition_vr;
-    BoundaryCondition_vt boundary_condition_vt;
+    BoundaryCondition_vx boundary_condition_vx;
+    BoundaryCondition_vy boundary_condition_vy;
     
     Pack boundary_condition(
-        boundary_condition_vr,
-        boundary_condition_vt
+        boundary_condition_vx,
+        boundary_condition_vy
     );
 }
 /*----------------------------------------------------------------------------
@@ -309,30 +278,30 @@ Value gauss(Value x,Value y){
 ProjectedSaver2D saver(
     Global::dist_function,
     Global::physic_vx, Global::physic_vy,
-    Axis_vr{}, Axis_vt{}
+    Axis_vx{}, Axis_vy{}
 );
 
 int main(){
     Value dt = 0.1;
     int num_steps = 10000;
     Global::dist_function.set_value(
-        [](int calc_vr,int calc_vt){
-            Value vx = Global::physic_vx.translate(calc_vr,calc_vt);
-            Value vy = Global::physic_vy.translate(calc_vr,calc_vt);
+        [](int calc_vx,int calc_vy){
+            Value vx = Global::physic_vx.translate(calc_vx,calc_vy);
+            Value vy = Global::physic_vy.translate(calc_vx,calc_vy);
             return gauss(vx,vy);
         }
     );
     //Global::dist_function.at(20,20)=5.;
     Global::m_field.z=m/Q/10.;
     for(int i=0;i<num_steps;i++){
-        if(i%30==0)saver.save("data/0D2V/"+std::to_string(i/30)+".bin");
+        if(i%30==0)saver.save("data/0D2V_cartesian/"+std::to_string(i/30)+".bin");
         if(i%100==0)std::cout<<i<<std::endl;
-        Global::equation.solve<Axis_vr>(dt/2.);
-        Global::boundary_manager.apply<Axis_vr>();
-        Global::equation.solve<Axis_vt>(dt);
-        Global::boundary_manager.apply<Axis_vt>();
-        Global::equation.solve<Axis_vr>(dt/2.);
-        Global::boundary_manager.apply<Axis_vr>();
+        Global::equation.solve<Axis_vx>(dt/2.);
+        Global::boundary_manager.apply<Axis_vx>();
+        Global::equation.solve<Axis_vy>(dt);
+        Global::boundary_manager.apply<Axis_vy>();
+        Global::equation.solve<Axis_vx>(dt/2.);
+        Global::boundary_manager.apply<Axis_vx>();
         //saver.save("data/0D2V/"+std::to_string(i)+".bin");
     }
     return 0;
