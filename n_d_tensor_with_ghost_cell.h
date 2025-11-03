@@ -14,7 +14,8 @@
 #include <type_traits> // スライス機能のために追加
 #include <fstream>
 #include <cstring>
-using Index = long long;
+
+using Index = int;
 
 // --- スライス用ヘルパー型 ---
 

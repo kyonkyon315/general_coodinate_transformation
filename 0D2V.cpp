@@ -17,7 +17,7 @@ using namespace std;
 //計算空間の軸なので、一律Δx=1であり、軸同士は直交しています。
 //最後の3,3 >はゴーストセルのグリッド数です。
 using Axis_vr = Axis<0,100,3,3>;
-using Axis_vt = Axis<1,100,3,3>;
+using Axis_vt = Axis<1,300,3,3>;
 
 //電子分布関数の型を定義
 //先頭に入力する型はテンソルの値の型です。その後に続く軸は、通し番号が小さいものほど左に入力してください。
@@ -38,7 +38,7 @@ namespace Global{
 
 // --- グローバル定数とヘルパー関数の定義 ---
 const Value grid_size_vr = 0.6;
-const Value grid_size_vt = 2.*M_PI / (double)(Axis_vt::num_grid+1);
+const Value grid_size_vt = 2.*M_PI / (double)(Axis_vt::num_grid);
 
 Value vr(int calc_vr){ return grid_size_vr * (0.5 + (double)calc_vr);}
 Value vt(int calc_vt){ return grid_size_vt * (0.5 + (double)calc_vt);}
@@ -53,13 +53,13 @@ Value vt(int calc_vt){ return grid_size_vt * (0.5 + (double)calc_vt);}
 
 class Physic_vx
 {
-private:
     NdTensor<Value,Axis_vr,Axis_vt> table;
+public:
     static Value honestly_translate(int calc_vr,int calc_vt){
         // v_x = vr * cos(vt)
         return vr(calc_vr) * cos(vt(calc_vt));
     }
-public:
+
     Physic_vx(){table.set_value(honestly_translate);}
     Value translate(int calc_vr,int calc_vt)const{
         return table.at(calc_vr,calc_vt);    
@@ -71,11 +71,11 @@ class Physic_vy
 {
 private:
     NdTensor<Value,Axis_vr,Axis_vt> table;
+public:
     static Value honestly_translate(int calc_vr,int calc_vt){
         // v_y = vr * sin(vt) 
         return vr(calc_vr) * sin(vt(calc_vt));
     }
-public:
     Physic_vy(){table.set_value(honestly_translate);}
     Value translate(int calc_vr,int calc_vt)const{
         return table.at(calc_vr,calc_vt);    
@@ -299,7 +299,7 @@ namespace Global{
 }
 #include "Timer.h"
 Value gauss(Value x,Value y){
-    Value sigma = 25.;
+    Value sigma = 100.;
     Value m_x = 40.;
     Value m_y =  0.;
     return std::exp(-((x-m_x)*(x-m_x)+(y-m_y)*(y-m_y))/sigma);
@@ -313,8 +313,8 @@ ProjectedSaver2D saver(
 );
 
 int main(){
-    Value dt = 0.5;
-    int num_steps = 100;
+    Value dt = 0.1;
+    int num_steps = 10000;
     Global::dist_function.set_value(
         [](int calc_vr,int calc_vt){
             Value vx = Global::physic_vx.translate(calc_vr,calc_vt);
@@ -325,8 +325,8 @@ int main(){
     //Global::dist_function.at(20,20)=5.;
     Global::m_field.z=m/Q/10.;
     for(int i=0;i<num_steps;i++){
-        saver.save("data/0D2V/"+std::to_string(i)+".bin");
-        std::cout<<i<<std::endl;
+        if(i%100==0)saver.save("data/0D2V/"+std::to_string(i/100)+".bin");
+        if(i%100==0)std::cout<<i<<std::endl;
         Global::equation.solve<Axis_vr>(dt/2.);
         Global::boundary_manager.apply<Axis_vr>();
         Global::equation.solve<Axis_vt>(dt);

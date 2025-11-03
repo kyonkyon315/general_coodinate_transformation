@@ -46,8 +46,8 @@ namespace Global{
 
 constexpr Value grid_size_x_ = 3.;
 const Value grid_size_vr = 4.;
-const Value grid_size_vt = M_PI / (double)(Axis_vt::num_grid+1);
-const Value grid_size_vp = 2.*M_PI / (double)(Axis_vp::num_grid+1);
+const Value grid_size_vt = M_PI / (double)(Axis_vt::num_grid);
+const Value grid_size_vp = 2.*M_PI / (double)(Axis_vp::num_grid);
 
 Value vr(int calc_vr){ return grid_size_vr * (0.5 + (double)calc_vr);}
 Value vt(int calc_vt){ return grid_size_vt * (0.5 + (double)calc_vt);}

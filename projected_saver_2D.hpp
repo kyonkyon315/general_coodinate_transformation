@@ -3,7 +3,7 @@
 
 #include <fstream>
 #include <cstdint>
-
+using Index = int;
 template<
     typename Tensor,  // NdTensorWithGhostCell<T, AxisA, AxisB>
     typename PhysX,   // Physic_x class: translate(int,int)
@@ -12,12 +12,17 @@ template<
     typename AxisB    // Axis_1
 >
 class ProjectedSaver2D {
+private:
+    void validated_index(Index& idA,Index& idB){
+
+    }
 public:
     ProjectedSaver2D(Tensor& tensor,
                      const PhysX& phys_x,
                      const PhysY& phys_y,
-                     AxisA, AxisB)
-        : tensor_(tensor), phys_x_(phys_x), phys_y_(phys_y)
+                     AxisA, AxisB
+                    )
+        : tensor_(tensor), phys_x(phys_x), phys_y(phys_y)
     {}
 
     // save to binary file
@@ -37,23 +42,38 @@ public:
             for (int j = 0; j < Ny; ++j) {
 
                 int vr0 = i;
-                int vr1 = std::min(i+1, Axis_vr::num_grid-1);
+                int vr1 = i+1;
                 int vt0 = j;
-                int vt1 = (j+1) % Axis_vt::num_grid;
+                int vt1 = j+1;
                 double vx[4];
                 double vy[4];
                 // CCW 順序
-                vx[0] = Global::physic_vx.translate(vr0, vt0);
-                vy[0] = Global::physic_vy.translate(vr0, vt0);
+                if (i+1<Nx && j+1<Ny){
+                    vx[0] = phys_x.translate(vr0, vt0);
+                    vy[0] = phys_y.translate(vr0, vt0);
 
-                vx[1] = Global::physic_vx.translate(vr1, vt0);
-                vy[1] = Global::physic_vy.translate(vr1, vt0);
+                    vx[1] = phys_x.translate(vr1, vt0);
+                    vy[1] = phys_y.translate(vr1, vt0);
 
-                vx[2] = Global::physic_vx.translate(vr1, vt1);
-                vy[2] = Global::physic_vy.translate(vr1, vt1);
+                    vx[2] = phys_x.translate(vr1, vt1);
+                    vy[2] = phys_y.translate(vr1, vt1);
 
-                vx[3] = Global::physic_vx.translate(vr0, vt1);
-                vy[3] = Global::physic_vy.translate(vr0, vt1);
+                    vx[3] = phys_x.translate(vr0, vt1);
+                    vy[3] = phys_y.translate(vr0, vt1);
+                }
+                else{
+                    vx[0] = phys_x.honestly_translate(vr0, vt0);
+                    vy[0] = phys_y.honestly_translate(vr0, vt0);
+
+                    vx[1] = phys_x.honestly_translate(vr1, vt0);
+                    vy[1] = phys_y.honestly_translate(vr1, vt0);
+
+                    vx[2] = phys_x.honestly_translate(vr1, vt1);
+                    vy[2] = phys_y.honestly_translate(vr1, vt1);
+
+                    vx[3] = phys_x.honestly_translate(vr0, vt1);
+                    vy[3] = phys_y.honestly_translate(vr0, vt1);
+                }
                 double fval = tensor_.at(i,j);
                 //std::cout<<fval<<"\n";
 
@@ -68,8 +88,8 @@ public:
 
 private:
     Tensor& tensor_;
-    const PhysX& phys_x_;
-    const PhysY& phys_y_;
+    const PhysX& phys_x;
+    const PhysY& phys_y;
 };
 
 #endif // PROJECTED_SAVER_2D_H

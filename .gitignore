@@ -4,3 +4,4 @@ visualizer/.venv/
 data/
 *.gif
 *.mp4
+output/
