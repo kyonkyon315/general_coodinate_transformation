@@ -92,57 +92,56 @@ public:
         Value f_im3, Value f_im2, Value f_im1,
         Value f_i,
         Value f_ip1, Value f_ip2, Value f_ip3,
-        Value nyu
+        Value nyu_m_half, Value nyu_p_half
     )const{
         
-        nyu=-nyu;//なぜかnyuを反転しないと逆になってしまう。
+        nyu_m_half = -nyu_m_half;//なぜかnyuを反転しないと逆になってしまう。
+        nyu_p_half = -nyu_p_half;//なぜかnyuを反転しないと逆になってしまう。
         Value delta_f_i = 0.0;
-
-        if (nyu >= 0.0) {
-            // nyu >= 0: 情報は右→左 (v <= 0) (upwind は 右 側)
-            // U_{i+1/2} の中心は i+1 -> stencil (i-1 .. i+3)
-            Value U_ip_half = calc_flux_rightward(
-                /*fm2*/ f_im2,  
-                /*fm1*/ f_im1,    
-                /*f0*/  f_i,  
-                /*fp1*/ f_ip1,  
-                /*fp2*/ f_ip2,  
-                nyu // nyu は既に正
-            );
-            // U_{i-1/2} の中心は i -> stencil (i-2 .. i+2)
-            Value U_im_half = calc_flux_rightward(
+        Value U_ip_half;
+        Value U_im_half;
+        if (nyu_m_half >= 0.0){
+            U_im_half = calc_flux_rightward(
                 /*fm2*/ f_im3,  // i-2
                 /*fm1*/ f_im2,  // i-1
                 /*f0*/  f_im1,    // i
                 /*fp1*/ f_i,  // i+1
                 /*fp2*/ f_ip1,  // i+2
-                nyu // nyu は既に正
+                nyu_m_half // nyu は既に正
             );
-            delta_f_i = U_im_half - U_ip_half;
-        } else {
-            // nyu < 0: 情報は左→右 (v > 0) (upwind は 左 側)
-            Value abs_nyu = -nyu; // calc_flux_rightward は正のnyuを期待するため
-
-            // U_{i+1/2} に対する中心 i と stencil i-2..i+2
-            Value U_ip_half = calc_flux_rightward(
-                /*fm2*/ f_ip3,
-                /*fm1*/ f_ip2,
-                /*f0*/  f_ip1,
-                /*fp1*/ f_i,
-                /*fp2*/ f_im1,
-                abs_nyu
-            );
-            // U_{i-1/2} の中心は i-1 => stencil (i-3 .. i+1)
-            Value U_im_half = calc_flux_rightward(
+        }
+        else{
+            U_im_half = - calc_flux_rightward(
                 /*fm2*/ f_ip2,
                 /*fm1*/ f_ip1,
                 /*f0*/  f_i,
                 /*fp1*/ f_im1,
                 /*fp2*/ f_im2,
-                abs_nyu
+                -nyu_m_half
             );
-            delta_f_i = -U_im_half + U_ip_half;
         }
+        if (nyu_p_half >= 0.0){
+            U_ip_half = calc_flux_rightward(
+                /*fm2*/ f_im2,  
+                /*fm1*/ f_im1,    
+                /*f0*/  f_i,  
+                /*fp1*/ f_ip1,  
+                /*fp2*/ f_ip2,  
+                nyu_p_half // nyu は既に正
+            );
+        }
+        else{
+            U_ip_half = - calc_flux_rightward(
+                /*fm2*/ f_ip3,
+                /*fm1*/ f_ip2,
+                /*f0*/  f_ip1,
+                /*fp1*/ f_i,
+                /*fp2*/ f_im1,
+                -nyu_p_half
+            );
+        }
+        delta_f_i = U_im_half - U_ip_half;
+        
 
         return delta_f_i;
     }

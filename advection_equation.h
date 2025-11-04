@@ -102,7 +102,7 @@ private:
                 },
                 indices...
             )...,
-            nyu
+            nyu,nyu//本当はnyu_minus_half, nyu_plus_halfを入れないといけない。
         );
 
 
