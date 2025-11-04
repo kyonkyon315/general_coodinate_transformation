@@ -5,3 +5,4 @@ data/
 *.gif
 *.mp4
 output/
+visualizer/advection_simulation.gif

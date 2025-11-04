@@ -215,10 +215,9 @@ int main(){
     Global::boundary_manager.apply<Axis_x_>();
     std::cout<<"V: "<<V<<"\n";
     for(int i=0;i<num_steps;i++){
+        if(i%5==0)Global::dist_function.save_physical("data/1D0V/"+std::to_string(i/5)+".bin");
         Global::equation.solve<Axis_x_>(dt);
         Global::boundary_manager.apply<Axis_x_>();
-        if(i%5==0)
-        Global::dist_function.save_physical("data/1D0V/"+std::to_string(i/5)+".bin");
     }
     return 0;
 }
