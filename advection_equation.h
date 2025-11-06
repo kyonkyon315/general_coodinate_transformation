@@ -2,6 +2,7 @@
 #define ADVECTION_EQUATION_H
 #include "independent.h"
 #include "utils/arg_changer.h"
+#include "slice.h"
 #include <type_traits>
 #include <array>
 #include <utility>
@@ -53,41 +54,43 @@ private:
     }
 
     // 再帰ヘルパ：indices を集める
-    template<int Depth,int Dim,int Target_Dim,typename... Ints>
-    void solve_helper(Value dt, Ints... indices){
+    template<int Depth,int Dim,typename...Slices,int Target_Dim,typename... Ints>
+    void solve_helper(const Value dt, Ints... indices){
         if constexpr(Depth == Dim){
             const Value df = solve_leaf<Target_Dim>(dt, indices...);
             //増加分を保存
             func_buffer.at(indices...) = df;
         }
         else if constexpr(Depth==0){
+            using CurrentSlice = std::tuple_element_t<Depth, std::tuple<Slices...>>;
             //[@TODO]Dim==1のときはomp発動しないようにした方がいいかも。
             constexpr int axis_len = TargetFunction::shape[Depth];
             #pragma omp parallel for
-            for(int i=0;i<axis_len;++i){
+            for(int i=CurrentSlice::START_val;i<CurrentSlice::End_val;++i){
                 // 再帰：indices に i を追加
                 solve_helper<Depth+1,Dim,Target_Dim>(dt, indices..., i);
             }
         }
         else{
+            using CurrentSlice = std::tuple_element_t<Depth, std::tuple<Slices...>>;
             constexpr int axis_len = TargetFunction::shape[Depth];
-            for(int i=0;i<axis_len;++i){
+            for(int i=CurrentSlice::START_val;i<CurrentSlice::End_val;++i){
                 // 再帰：indices に i を追加
-                solve_helper<Depth+1,Dim,Target_Dim>(dt, indices..., i);
+                solve_helper<Depth+1,Dim,Slices,Target_Dim>(dt, indices..., i);
             }
         }
     }
 
     // leaf: index_sequence を生成して「index-first」ヘルパを呼ぶ
     template<int Target_Dim, typename... Ints>
-    Value solve_leaf(Value dt, Ints... indices){
+    Value solve_leaf(const Value dt, Ints... indices){
         constexpr std::size_t stencil_size = (R - L + 1);
         return solve_leaf_impl_indices<Target_Dim>(dt, std::make_index_sequence<stencil_size>{}, indices...);
     }
 
     // helper: index_sequence を最初の引数に置く（※これで推論が安定）
     template<int Target_Dim, std::size_t... Is, typename... Ints>
-    Value solve_leaf_impl_indices(Value dt, std::index_sequence<Is...>, Ints... indices){
+    Value solve_leaf_impl_indices(const Value dt, std::index_sequence<Is...>, Ints... indices){
         // コンパイル時に確定するオフセット配列
         static constexpr int stencil_offsets[] = { (int(Is) + L)... };
 
@@ -104,8 +107,6 @@ private:
             )...,
             nyu,nyu//本当はnyu_minus_half, nyu_plus_halfを入れないといけない。
         );
-
-
         return df;
     }
 
@@ -136,6 +137,16 @@ public:
 
         //dfをfに足し込む（関数の更新）
         target_func.add(func_buffer);
+    }
+
+    template<typename CalcAxis,typename... Slices>
+    void solve(const Value dt){
+        constexpr int target_dim = CalcAxis::label;
+        static_assert(sizeof...(Slices)==dimension,"Slices の数が次元数と一致しません。");
+        
+        solve_helper<0,dimension,Slices...,target_dim>(dt);
+        //dfをfに足し込む（関数の更新）
+        target_func.add<Slices...>(func_buffer);
     }
 };
 #endif //ADVECTION_EQUATION_H
