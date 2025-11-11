@@ -6,6 +6,7 @@
 #include <array>
 #include <utility>
 #include <omp.h>
+#include <cmath>
 
 using Value = double;
 template<typename TargetFunction,typename Operators,typename Advections,typename Jacobian,typename Scheme,typename BoundaryCondition>
@@ -92,9 +93,27 @@ private:
         static constexpr int stencil_offsets[] = { (int(Is) + L)... };
 
         // チェーンルールによる advection 計算
-        Value advection = this->advection_in_calc_space<Target_Dim>(indices...);
-        Value nyu = - dt * advection;
-
+        Value advection_p_1 = Utility::arg_changer<Target_Dim,1>(
+                            [this](auto... idxs) -> Value{
+                                return this->advection_in_calc_space<Target_Dim>(idxs...);
+                            },
+                            indices...
+                        );
+        Value advection = Utility::arg_changer<Target_Dim,0>(
+                            [this](auto... idxs) -> Value{
+                                return this->advection_in_calc_space<Target_Dim>(idxs...);
+                            },
+                            indices...
+                        );
+        Value advection_m_1 = Utility::arg_changer<Target_Dim,-1>(
+                            [this](auto... idxs) -> Value{
+                                return this->advection_in_calc_space<Target_Dim>(idxs...);
+                            },
+                            indices...
+                        );
+        Value nyu_p_half = - dt * (advection+advection_p_1)/2.;
+        Value nyu_m_half = - dt * (advection+advection_m_1)/2.;
+        
         Value df = this->scheme.calc_df(
             Utility::arg_changer<Target_Dim, stencil_offsets[Is]>(
                 [this](auto... idxs) -> Value {
@@ -102,9 +121,16 @@ private:
                 },
                 indices...
             )...,
-            nyu,nyu//本当はnyu_minus_half, nyu_plus_halfを入れないといけない。
+            nyu_p_half,nyu_m_half
         );
 
+        if(std::isnan(df)){
+            ((std::cout<<indices<<" "),...);
+            std::cout<<"nyu_p_half: "<<nyu_p_half<<"\n";
+            std::cout<<"nyu_m_half: "<<nyu_m_half<<"\n";
+            std::cout<<"\n";
+            throw 1;
+        }
 
         return df;
     }
