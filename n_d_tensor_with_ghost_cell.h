@@ -130,10 +130,13 @@ private:
         // 再帰ステップ
         else {
             using CurrentSlice = std::tuple_element_t<Depth, std::tuple<Slices...>>;
+            // 2. この次元の安全な境界（確保されたメモリ全体）を取得
+            constexpr Index min_bound = -L_ghost_lengths[Depth];                // 例: -3
+            constexpr Index max_bound = shape[Depth] + R_ghost_lengths[Depth];    // 例: 10 + 3 = 13
 
             if constexpr (std::is_same_v<CurrentSlice, FullSlice>) {
                 // (A) FullSlice の場合: 物理領域 [0, shape[Dim]) をループ
-                for (int i = 0; i < shape[Depth]; ++i) {
+                for (int i = min_bound; i < max_bound; ++i) {
                     set_value_sliced_helper<Depth+1,Func, Slices...>(func, indices..., i);
                 }
             } 
@@ -145,11 +148,6 @@ private:
                 // 1. ユーザー指定の範囲を取得
                 constexpr Index req_start = CurrentSlice::START_val;
                 constexpr Index req_end   = CurrentSlice::END_val;
-
-                // 2. この次元の安全な境界（確保されたメモリ全体）を取得
-                constexpr Index min_bound = -L_ghost_lengths[Depth];                // 例: -3
-                constexpr Index max_bound = shape[Depth] + R_ghost_lengths[Depth];    // 例: 10 + 3 = 13
-
                 // 3. ユーザーの要求を、安全な境界内に自動クリッピング
                 
                 // start_idx = max(min_bound, req_start)

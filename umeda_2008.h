@@ -55,7 +55,7 @@ private:
                         std::max(2.0*fp1 - fp2, 2.0*f0 - fm1));
 
         Value f_max = std::max(f_max1, f_max2);
-        Value f_min = std::min(f_min1, f_min2);
+        Value f_min = std::max(0.,std::min(f_min1, f_min2));
 
         Value L_pos;
         if (fp1 >= f0)

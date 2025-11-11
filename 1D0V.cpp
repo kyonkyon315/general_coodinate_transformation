@@ -113,7 +113,7 @@ Jacobian jacobian(
 //------------------------------------------
 // 1. v_x * df/dx
 //------------------------------------------
-const Value V = -1.5;
+const Value V = -0.3;
 class Fx_ {
 public:
     Fx_(){}
@@ -211,11 +211,14 @@ int main(){
         Global::dist_function.at(i)=10.;
     }
     Value dt = 1.;
-    int num_steps = 500;
+    int num_steps = 5000000;
     Global::boundary_manager.apply<Axis_x_>();
     std::cout<<"V: "<<V<<"\n";
     for(int i=0;i<num_steps;i++){
-        if(i%5==0)Global::dist_function.save_physical("data/1D0V/"+std::to_string(i/5)+".bin");
+        if(i%5000==0){
+            Global::dist_function.save_physical("data/1D0V/"+std::to_string(i/5000)+".bin");
+            std::cout<<i/5000<<"\n";
+        }
         Global::equation.solve<Axis_x_>(dt);
         Global::boundary_manager.apply<Axis_x_>();
     }

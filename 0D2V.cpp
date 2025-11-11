@@ -17,7 +17,7 @@ using namespace std;
 //計算空間の軸なので、一律Δx=1であり、軸同士は直交しています。
 //最後の3,3 >はゴーストセルのグリッド数です。
 using Axis_vr = Axis<0,100,3,3>;
-using Axis_vt = Axis<1,300,3,3>;
+using Axis_vt = Axis<1,50,3,3>;
 
 //電子分布関数の型を定義
 //先頭に入力する型はテンソルの値の型です。その後に続く軸は、通し番号が小さいものほど左に入力してください。
@@ -53,14 +53,14 @@ Value vt(int calc_vt){ return grid_size_vt * (0.5 + (double)calc_vt);}
 
 class Physic_vx
 {
-    NdTensor<Value,Axis_vr,Axis_vt> table;
+    NdTensorWithGhostCell<Value,Axis_vr,Axis_vt> table;
 public:
     static Value honestly_translate(int calc_vr,int calc_vt){
         // v_x = vr * cos(vt)
         return vr(calc_vr) * cos(vt(calc_vt));
     }
 
-    Physic_vx(){table.set_value(honestly_translate);}
+    Physic_vx(){table.set_value_sliced<FullSlice,FullSlice>(honestly_translate);}
     Value translate(int calc_vr,int calc_vt)const{
         return table.at(calc_vr,calc_vt);    
     }
@@ -70,13 +70,13 @@ public:
 class Physic_vy
 {
 private:
-    NdTensor<Value,Axis_vr,Axis_vt> table;
+    NdTensorWithGhostCell<Value,Axis_vr,Axis_vt> table;
 public:
     static Value honestly_translate(int calc_vr,int calc_vt){
         // v_y = vr * sin(vt) 
         return vr(calc_vr) * sin(vt(calc_vt));
     }
-    Physic_vy(){table.set_value(honestly_translate);}
+    Physic_vy(){table.set_value_sliced<FullSlice,FullSlice>(honestly_translate);}
     Value translate(int calc_vr,int calc_vt)const{
         return table.at(calc_vr,calc_vt);    
     }
@@ -313,8 +313,7 @@ ProjectedSaver2D saver(
 );
 
 int main(){
-    Value dt = 0.1;
-    int num_steps = 10000;
+    
     Global::dist_function.set_value(
         [](int calc_vr,int calc_vt){
             Value vx = Global::physic_vx.translate(calc_vr,calc_vt);
@@ -323,10 +322,16 @@ int main(){
         }
     );
     //Global::dist_function.at(20,20)=5.;
-    Global::m_field.z=m/Q/10.;
+    Value T = 10.;//サイクロトロン周期
+    Global::m_field.z = 2.*M_PI*m/(Q*T);
+
+    Value dt = 0.1* T/Axis_vt::num_grid;//クーラン数 = 0.1になるように調整
+
+    int num_steps = (int)(10000.*T/dt);//サイクロトロン運動を10000周させる計算
+
     for(int i=0;i<num_steps;i++){
-        if(i%30==0)saver.save("data/0D2V/"+std::to_string(i/30)+".bin");
-        if(i%100==0)std::cout<<i<<std::endl;
+        if(i%(num_steps/1000)==0)saver.save("data/0D2V/"+std::to_string(i/(num_steps/1000))+".bin");
+        if(i%(num_steps/1000)==0)std::cout<<i<<"data/0D2V/"+std::to_string(i/(num_steps/1000))+".bin"<<std::endl;
         Global::equation.solve<Axis_vr>(dt/2.);
         Global::boundary_manager.apply<Axis_vr>();
         Global::equation.solve<Axis_vt>(dt);
