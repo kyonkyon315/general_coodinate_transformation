@@ -59,15 +59,15 @@ private:
 
         Value L_pos;
         if (fp1 >= f0)
-            L_pos = std::min(2.0*(f0 - f_min), (fp1 - f0));
+            L_pos = std::min(4.0*(f0 - f_min), (fp1 - f0));
         else
-            L_pos = std::max(2.0*(f0 - f_max), (fp1 - f0));
+            L_pos = std::max(4.0*(f0 - f_max), (fp1 - f0));
 
         Value L_neg;
         if (f0 >= fm1)
-            L_neg = std::min(2.0*(f_max - f0), (f0 - fm1));
+            L_neg = std::min(3.0*(f_max - f0), (f0 - fm1));
         else
-            L_neg = std::max(2.0*(f_min - f0), (f0 - fm1));
+            L_neg = std::max(3.0*(f_min - f0), (f0 - fm1));
 
         Value U = (f0
                 + (1.0 - nyu)*(2.0 - nyu)*L_pos/6.

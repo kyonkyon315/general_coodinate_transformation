@@ -16,7 +16,7 @@ using namespace std;
 //通し番号は重複することなく、互いに隣り合った0以上の整数である必要があります。また、0を含む必要があります。
 //計算空間の軸なので、一律Δx=1であり、軸同士は直交しています。
 //最後の3,3 >はゴーストセルのグリッド数です。
-using Axis_x_ = Axis<0,50,3,3>;
+using Axis_x_ = Axis<0,80,3,3>;
 
 //電子分布関数の型を定義
 //先頭に入力する型はテンソルの値の型です。その後に続く軸は、通し番号が小さいものほど左に入力してください。
@@ -41,7 +41,7 @@ namespace Global{
 
 // --- グローバル定数とヘルパー関数の定義 ---
 
-constexpr Value grid_size_x_ = 3.;
+constexpr Value grid_size_x_ = 1.;
 
 
 // --- 物理量クラス ---
@@ -113,7 +113,7 @@ Jacobian jacobian(
 //------------------------------------------
 // 1. v_x * df/dx
 //------------------------------------------
-const Value V = -0.3;
+const Value V = -0.1;
 class Fx_ {
 public:
     Fx_(){}
@@ -211,13 +211,13 @@ int main(){
         Global::dist_function.at(i)=10.;
     }
     Value dt = 1.;
-    int num_steps = 5000000;
+    int num_steps = 8000;
     Global::boundary_manager.apply<Axis_x_>();
     std::cout<<"V: "<<V<<"\n";
     for(int i=0;i<num_steps;i++){
-        if(i%5000==0){
-            Global::dist_function.save_physical("data/1D0V/"+std::to_string(i/5000)+".bin");
-            std::cout<<i/5000<<"\n";
+        if(i%8==0){
+            Global::dist_function.save_physical("data/1D0V/"+std::to_string(i/8)+".bin");
+            std::cout<<i/8<<"\n";
         }
         Global::equation.solve<Axis_x_>(dt);
         Global::boundary_manager.apply<Axis_x_>();
