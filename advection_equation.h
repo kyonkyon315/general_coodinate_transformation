@@ -14,7 +14,8 @@ class AdvectionEquation
 {
 private:
     TargetFunction& target_func;
-    TargetFunction func_buffer;
+    TargetFunction func_buffer1;
+    TargetFunction func_buffer2;
     const Operators& operators;
     const Advections& advections;
     const Jacobian& jacobian;
@@ -59,7 +60,7 @@ private:
         if constexpr(Depth == Dim){
             const Value df = solve_leaf<Target_Dim>(dt, indices...);
             //増加分を保存
-            func_buffer.at(indices...) = df;
+            func_buffer1.at(indices...) = df;
         }
         else if constexpr(Depth==0){
             //[@TODO]Dim==1のときはomp発動しないようにした方がいいかも。
@@ -156,12 +157,22 @@ public:
     }
     template<typename CalcAxis>
     void solve(Value dt){
+        //以下ルンゲクッタ2の実装
         constexpr int target_dim = CalcAxis::label;
-        // dfを計算してfunc_bufferに格納
-        solve_helper<0, dimension, target_dim>(dt);
+        // dfを計算してfunc_buffer1に格納
+        solve_helper<0, dimension, target_dim>(dt/2.);
+
+        func_buffer2.copy(target_func);
 
         //dfをfに足し込む（関数の更新）
-        target_func.add(func_buffer);
+        target_func.add(func_buffer1);
+        // dfを計算してfunc_buffer1に格納
+        solve_helper<0, dimension, target_dim>(dt);
+
+        target_func.copy(func_buffer2);
+        //dfをfに足し込む（関数の更新）
+        target_func.add(func_buffer1);
+
     }
 };
 #endif //ADVECTION_EQUATION_H

@@ -182,6 +182,12 @@ public:
             data[i]+=r.data[i];
         }
     }
+
+    void copy(const NdTensorWithGhostCell& r){
+        for(Index i=0;i<total_size;++i){
+            data[i] = r.data[i];
+        }
+    }
     
     // at() アクセサ
     template<typename... Idx>
