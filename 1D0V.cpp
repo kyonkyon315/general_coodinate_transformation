@@ -130,7 +130,9 @@ namespace Global{
  * 次に、Flux計算機を選択します。今回は、Umeda2008を用います。
  ****************************************************************************/
 #include "umeda_2008.h"
-using Scheme = Umeda2008;
+#include "umeda_2008_fifth_order.h"
+//using Scheme = Umeda2008;
+using Scheme = Umeda2008_5;
 namespace Global{
     Scheme scheme;
 }
@@ -211,13 +213,13 @@ int main(){
         Global::dist_function.at(i)=10.;
     }
     Value dt = 1.;
-    int num_steps = 8000;
+    int num_steps = 5000000;
     Global::boundary_manager.apply<Axis_x_>();
     std::cout<<"V: "<<V<<"\n";
     for(int i=0;i<num_steps;i++){
-        if(i%8==0){
-            Global::dist_function.save_physical("data/1D0V/"+std::to_string(i/8)+".bin");
-            std::cout<<i/8<<"\n";
+        if(i%5000==0){
+            Global::dist_function.save_physical("data/1D0V/"+std::to_string(i/5000)+".bin");
+            std::cout<<i/5000<<"\n";
         }
         Global::equation.solve<Axis_x_>(dt);
         Global::boundary_manager.apply<Axis_x_>();
