@@ -6,10 +6,17 @@
 #include <stdexcept> // for std::runtime_error
 #include <random>    // <--- [追加] 乱数生成のため
 #include <cmath>     // <--- [追加] std::sqrt のため
+#include <filesystem>
 
 #include "layers/input_layer.h"
 #include "layers/affine.h"
 #include "layers/relu.h"
+
+
+#include <fstream>
+#include <stdexcept>
+#include "utils/vector_io.h"
+
 
 // 各ファイルで共通の型エイリアス
 using Index = int;
@@ -145,8 +152,6 @@ struct InitializeWeights<InputLayer<DIM>> {
     }
 };
 
-// <--- [追加ここまで] --
-
 } // namespace internal
 
 
@@ -250,6 +255,30 @@ public:
         std::copy(d_out_buf.begin() + x0, 
                   d_out_buf.begin() + x0 + input_dimension, 
                   input_grad.begin());
+    }
+
+    static std::string get_network_structure(){
+        return FinalLayer::get_network_structure();
+    }
+
+    void save_param(const std::string& folder_name)const{
+        std::filesystem::path dir = folder_name;
+        std::filesystem::create_directories(dir);
+        std::ofstream ofs(folder_name+"/structure.txt");
+        std::string network_structure = get_network_structure();
+        ofs<<network_structure;
+        save_vector(w_buf, folder_name+"/data.bin");
+
+    }
+    void load_param(const std::string& folder_name){
+        std::ifstream ifs(folder_name+"/structure.txt");
+        std::string network_structure;
+        ifs>>network_structure;
+        if(get_network_structure() != network_structure){
+            throw std::runtime_error("network structure in file mismach.");
+        }
+        w_buf = load_vector<Value>(folder_name+"/data.bin");
+
     }
 };
 

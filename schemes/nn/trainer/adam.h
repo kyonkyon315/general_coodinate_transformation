@@ -66,7 +66,9 @@ public:
      */
     void learn() {
         
-        std::vector<double> output(Model<FinalLayer>::output_dimension);
+        std::vector<double> output(model.output_dimension);
+        std::vector<double> output_gradient(model.output_dimension);
+
         // 1エポックあたりのイテレーション数 (ダミー)
         // 本来は (全データ数 / バッチサイズ)
         int iterations_per_epoch = 100; 
@@ -101,12 +103,17 @@ public:
                     // 3b. 損失 (MSE) と出力層の勾配を計算
                     // 損失 L = 0.5 * (output[0] - true_label[0])^2
                     // 損失の微分 dL/d_output = output[0] - true_label[0]
-                    
-                    double loss = 0.5 * std::pow(output[0] - true_label[0], 2);
+                    double loss = 0.;
+                    for(int j=0;j<model.output_dimension;++j){
+                        loss += 0.5 * std::pow(output[j] - true_label[j], 2);
+                    }
                     current_batch_loss += loss;
 
                     std::vector<double> output_gradient(model.output_dimension);
-                    output_gradient[0] = output[0] - true_label[0];
+
+                    for(int j=0;j<model.output_dimension;++j){
+                        output_gradient[j] = output[j] - true_label[j];
+                    }
 
                     // 3c. 逆伝播 (勾配は model.d_w_buf に蓄積される)
                     model.backward(output_gradient);

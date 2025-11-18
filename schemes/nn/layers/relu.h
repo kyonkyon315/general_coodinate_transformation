@@ -49,5 +49,9 @@ public:
                 );
         }
     }
+
+    static std::string get_network_structure(){
+        return "Relu<" + PreviousLayer::get_network_structure() + ">";
+    }
 };
 #endif //RELU_H

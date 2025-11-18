@@ -1,0 +1,1 @@
+Affine<Relu<Affine<Relu<Affine<InputLayer<2>,10>>,10>>,1>

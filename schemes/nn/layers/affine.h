@@ -89,6 +89,10 @@ public:
             d_w_buf[b0 + o] += d_out_buf[y0 + o];
         }
     }
+
+    static std::string get_network_structure(){
+        return "Affine<" + PreviousLayer::get_network_structure() + "," + std::to_string(output_dimension) + ">";
+    }
 };
 
 #endif // AFFINE_H
