@@ -1,9 +1,9 @@
 #include <cmath>
-#include "axis.h"
-#include "n_d_tensor_with_ghost_cell.h"
-#include "n_d_tensor.h"
-#include "vec3.h"
-#include "pack.h"
+#include "../axis.h"
+#include "../n_d_tensor_with_ghost_cell.h"
+#include "../n_d_tensor.h"
+#include "../vec3.h"
+#include "../pack.h"
 const double Q = 1.602e-19;
 const double m = 9.101e-31;
 
@@ -16,11 +16,12 @@ using namespace std;
 //通し番号は重複することなく、互いに隣り合った0以上の整数である必要があります。また、0を含む必要があります。
 //計算空間の軸なので、一律Δx=1であり、軸同士は直交しています。
 //最後の3,3 >はゴーストセルのグリッド数です。
-using Axis_x_ = Axis<0,80,3,3>;
+using Axis_x_ = Axis<0,100,3,3>;
+using Axis_v_ = Axis<1,100,3,3>;
 
 //電子分布関数の型を定義
 //先頭に入力する型はテンソルの値の型です。その後に続く軸は、通し番号が小さいものほど左に入力してください。
-using DistributionFunction = NdTensorWithGhostCell<Value,Axis_x_>;
+using DistributionFunction = NdTensorWithGhostCell<Value,Axis_x_,Axis_v_>;
 
 //電場の型を定義
 using ElectricField = NdTensorWithGhostCell<Vec3<Value>,Axis_x_>;
@@ -41,7 +42,10 @@ namespace Global{
 
 // --- グローバル定数とヘルパー関数の定義 ---
 
-constexpr Value grid_size_x_ = 1.;
+constexpr Value grid_size_x_ = 5.;
+const Value grid_size_v_ = 2.;
+
+Value v(int calc_v_){ return grid_size_v_ * (double)(calc_v_-Axis_v_::num_grid/2);}
 
 
 // --- 物理量クラス ---
@@ -54,16 +58,27 @@ class Physic_x_
 {
 public:
     Physic_x_(){}
-    Value translate(int calc_x)const{
+    Value translate(int calc_x,int calc_vr)const{
         return grid_size_x_*calc_x;
     }
     static const int label = 0;
+};
+
+class Physic_v_
+{
+public:
+    Physic_v_(){}
+    Value translate(int calc_x_,int calc_v_)const{
+        return v(calc_v_);    
+    }
+    static const int label = 1;
 };
 
 
 //グローバル変数としてインスタンス化しておく。
 namespace Global{
     Physic_x_ physic_x_;
+    Physic_v_ physic_v_;
 }
 /***********************************************
  * 計算軸を物理軸で微分した値の関数を書きます　(始)*
@@ -75,19 +90,28 @@ class X__diff_x_
 {
 public:
     X__diff_x_(){}
-    Value at(int calc_x_)const{
-        return 1./(Value)grid_size_x_;
+    Value at(int calc_x_,int calc_v_)const{
+        return 1./grid_size_x_;
+    }
+};
+
+class V__diff_v_
+{
+public:
+    V__diff_v_(){}
+    Value at(int calc_x_,int calc_v_)const{
+        return 1./grid_size_v_;
     }
 };
 
 
 
-
-#include "independent.h"
+#include "../independent.h"
 //グローバル変数としてインスタンス化
 namespace Global{
     const Independent independent;
     const X__diff_x_ x__diff_x_;
+    const V__diff_v_ v__diff_v_;
 }
 
 /*******************************************************************
@@ -97,15 +121,16 @@ namespace Global{
  * 具体的には、Jacobian[I,J]には「通し番号Iの計算軸」を「通し番号Jの物理*
  * 軸」で微分したものを入れてください。                               *
  *******************************************************************/
-#include "jacobian.h"
+#include "../jacobian.h"
 namespace Global{
 Jacobian jacobian(
-    x__diff_x_ 
+    x__diff_x_ , independent, 
+    independent, v__diff_v_ 
 );
 }
 /*******************************************
  * 解くべき移流方程式を定義します。           *
- * df/dt + v df/dx = 0 *
+ * df/dt + v_x df/dx + q/m(E+v*B)・∇_v f = 0 *
  * を例に定義の仕方を解説                    *
  *******************************************/
 
@@ -113,26 +138,36 @@ Jacobian jacobian(
 //------------------------------------------
 // 1. v_x * df/dx
 //------------------------------------------
-const Value V = -0.1;
 class Fx_ {
 public:
     Fx_(){}
-    Value at(int calc_x_) const {
-        return V;
+    Value at(int calc_x_, int calc_vr) const {
+        return Global::physic_v_.translate(calc_x_, calc_vr);
     }
 };
 
+//------------------------------------------
+// 2. q/m (E + v×B)_x
+//------------------------------------------
+class Fv_ {
+private:
+public:
+    Fv_(){}
+
+    Value at(int calc_x_, int calc_vr) const {
+        return Q/m * (      Global::e_field.at(calc_x_).x );
+    }
+};
 namespace Global{
     Fx_ flux_x_;
+    Fv_ flux_v_;
 }
 
 /****************************************************************************
  * 次に、Flux計算機を選択します。今回は、Umeda2008を用います。
  ****************************************************************************/
-#include "umeda_2008.h"
-#include "umeda_2008_fifth_order.h"
-//using Scheme = Umeda2008;
-using Scheme = Umeda2008_5;
+#include "../umeda_2008.h"
+using Scheme = Umeda2008;
 namespace Global{
     Scheme scheme;
 }
@@ -159,30 +194,47 @@ class BoundaryCondition_x_
 public:
     static const int label = 0;
     template<typename Func>
-    static Value left(Func func,int calc_x_){
-        return func(Axis_x_::num_grid + calc_x_);
+    static Value left(Func func,int calc_x_, int calc_v_){
+        return func(-calc_x_, calc_v_);
     }
     template<typename Func>
-    static Value right(Func func,int calc_x_){
-        return func(calc_x_ - Axis_x_::num_grid);
+    static Value right(Func func,int calc_x_, int calc_v_){
+        return func(calc_x_ - Axis_x_::num_grid, calc_v_);
     }
 };
 
+class BoundaryCondition_v_
+{
+public:
+    static const int label = 1;
+    template<typename Func>
+    static Value left(Func func,int calc_x_, int calc_v_){
+        return func(calc_x_, -calc_v_);
+    }
+
+    //物理的におかしいけど、とりあえずこうしておく
+    template<typename Func>
+    static Value right(Func func,int calc_x_, int calc_v_){
+        return func(calc_x_, calc_v_-Axis_x_::num_grid);
+    }
+};
 
 /*--------------------------------------
  * Pack を用いて境界条件をまとめます。
  *----------------------------------------------*/
 namespace Global{
     BoundaryCondition_x_ boundary_condition_x_;
+    BoundaryCondition_v_ boundary_condition_v_;
     
     Pack boundary_condition(
-        boundary_condition_x_
+        boundary_condition_x_,
+        boundary_condition_v_
     );
 }
 /*----------------------------------------------------------------------------
  * ターゲットとなる関数とboundary_conditionを用いてboundary_managerを作成します。
  *---------------------------------------------------------------------------*/
-#include "boundary_manager.h"
+#include "../boundary_manager.h"
 
 namespace Global{
     BoundaryManager boundary_manager(dist_function,boundary_condition);
@@ -200,29 +252,24 @@ namespace Global{
  *なるソルバーとして働きます。
  ****************************************************************************/
 
-#include "advection_equation.h"
+#include "../advection_equation.h"
 namespace Global{
-    Pack operators(physic_x_);
-    Pack advections(flux_x_);
+    Pack operators(physic_x_,physic_v_);
+    Pack advections(flux_x_,flux_v_);
     AdvectionEquation equation(dist_function,operators,advections,jacobian,scheme,boundary_condition);
 }
-#include "Timer.h"
+#include "../Timer.h"
 int main(){
-
-    for(int i=0;i<20;i++){
-        Global::dist_function.at(i)=10.;
-    }
-    Value dt = 1.;
-    int num_steps = 5000000;
-    Global::boundary_manager.apply<Axis_x_>();
-    std::cout<<"V: "<<V<<"\n";
+    Value dt = 0.1;
+    int num_steps = 100;
     for(int i=0;i<num_steps;i++){
-        if(i%5000==0){
-            Global::dist_function.save_physical("data/1D0V/"+std::to_string(i/5000)+".bin");
-            std::cout<<i/5000<<"\n";
-        }
+        std::cout<<i<<std::endl;
+        Global::equation.solve<Axis_v_>(dt/2.);
+        Global::boundary_manager.apply<Axis_v_>();
         Global::equation.solve<Axis_x_>(dt);
         Global::boundary_manager.apply<Axis_x_>();
+        Global::equation.solve<Axis_v_>(dt/2.);
+        Global::boundary_manager.apply<Axis_v_>();
     }
     return 0;
 }
