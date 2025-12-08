@@ -1,9 +1,5 @@
 #include <cmath>
-#include "../axis.h"
-#include "../n_d_tensor_with_ghost_cell.h"
-#include "../n_d_tensor.h"
-#include "../vec3.h"
-#include "../pack.h"
+#include "../include.h"
 const double Q = 1.602e-19;
 const double m = 9.101e-31;
 
@@ -157,8 +153,6 @@ public:
     }
 };
 
-
-#include "../independent.h"
 //グローバル変数としてインスタンス化
 namespace Global{
     const Independent independent;
@@ -176,7 +170,7 @@ namespace Global{
  * 具体的には、Jacobian[I,J]には「通し番号Iの計算軸」を「通し番号Jの物理*
  * 軸」で微分したものを入れてください。                               *
  *******************************************************************/
-#include "../jacobian.h"
+
 namespace Global{
 Jacobian jacobian(
     x__diff_x_ , independent, independent,
@@ -230,7 +224,7 @@ namespace Global{
 /****************************************************************************
  * 次に、Flux計算機を選択します。今回は、Umeda2008を用います。
  ****************************************************************************/
-#include "../umeda_2008.h"
+
 using Scheme = Umeda2008;
 namespace Global{
     Scheme scheme;
@@ -327,7 +321,7 @@ namespace Global{
 /*----------------------------------------------------------------------------
  * ターゲットとなる関数とboundary_conditionを用いてboundary_managerを作成します。
  *---------------------------------------------------------------------------*/
-#include "../boundary_manager.h"
+
 
 namespace Global{
     BoundaryManager boundary_manager(dist_function,boundary_condition);
@@ -345,13 +339,11 @@ namespace Global{
  *なるソルバーとして働きます。
  ****************************************************************************/
 
-#include "../advection_equation.h"
 namespace Global{
     Pack operators(physic_x_,physic_vx,physic_vy);
     Pack advections(flux_x_,flux_vx,flux_vy);
     AdvectionEquation equation(dist_function,operators,advections,jacobian,scheme,boundary_condition);
 }
-#include "../Timer.h"
 Value gauss(Value x,Value y){
     Value sigma = 1.;
     Value m_x = 40.;
@@ -395,7 +387,7 @@ int main(){
 
     for(int i=0;i<num_steps;i++){
         integrate();
-        if(i%5==0)Global::f_integrated_by_v.save_physical("data/1D2V/"+std::to_string(i/5)+".bin");
+        if(i%5==0)Global::f_integrated_by_v.save_physical("../data/1D2V/"+std::to_string(i/5)+".bin");
         if(i%100==0)std::cout<<i<<std::endl;
         Global::equation.solve<Axis_x_>(dt/2.);
         Global::boundary_manager.apply<Axis_x_>();
