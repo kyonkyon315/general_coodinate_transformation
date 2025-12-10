@@ -6,3 +6,6 @@ data/
 *.mp4
 output/
 visualizer/advection_simulation.gif
+FDTD/test/a.out
+FDTD/test/Ex_animation.gif
+FDTD/test/out/
