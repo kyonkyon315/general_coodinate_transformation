@@ -1,10 +1,3 @@
-// maxwell_solver_with_tensor_utils.cpp
-// Combined example: tensor conversion utilities + a simple Yee-like Maxwell solver
-// on a skwed non-orthogonal mapping (3D) using contravariant components.
-// - Uses the previously provided utility functions (metric, raise/lower, transforms)
-// - Updates B^i and E^i in contravariant form using central differences in xi
-// - Demonstrates applying physical BCs and outputting Cartesian fields
-
 #include <array>
 #include <cmath>
 #include <iostream>
