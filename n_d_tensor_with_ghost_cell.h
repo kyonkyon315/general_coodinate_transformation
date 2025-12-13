@@ -14,6 +14,7 @@
 #include <type_traits> // スライス機能のために追加
 #include <fstream>
 #include <cstring>
+#include <utility>
 
 using Index = int;
 
@@ -288,6 +289,15 @@ public:
 
         std::array<int, sizeof...(Axes)> idxs{};
         reader(reader, idxs, 0);
+    }
+
+    void swap(NdTensorWithGhostCell& right) noexcept {
+        std::swap(this->data, right.data);
+    }
+
+    // 非メンバ関数の swap (ADL対応)
+    friend void swap(NdTensorWithGhostCell& a, NdTensorWithGhostCell& b) noexcept {
+        a.swap(b);
     }
 
 };
