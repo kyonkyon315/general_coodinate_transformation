@@ -41,14 +41,14 @@ int main(){
 
     for(int i=0;i<100;++i){
         Value k = 4./100.;
-        Global::e_field.at(i).x=Physics::c* std::sin(2. * M_PI * k * (Value(i)+0.5));
-        Global::e_field.at(i).y=Physics::c* std::cos(2. * M_PI * k * (Value(i)+0.5));
+        Global::e_field.at(i).x=Parameters::c* std::sin(2. * M_PI * k * (Value(i)+0.5));
+        Global::e_field.at(i).y=Parameters::c* std::cos(2. * M_PI * k * (Value(i)+0.5));
         Global::m_field.p_half.at(i).x=std::sin(2. * M_PI * k * Value(i) + M_PI/2.);
         Global::m_field.p_half.at(i).y=std::cos(2. * M_PI * k * Value(i) + M_PI/2.);
     }
     double dt = 0.1;
     double courant_v = 0.3;
-    double dz = Physics::c*dt/courant_v;
+    double dz = Parameters::c*dt/courant_v;
     Timer timer;
     timer.start();
     for(int t=0;t<10000;++t){

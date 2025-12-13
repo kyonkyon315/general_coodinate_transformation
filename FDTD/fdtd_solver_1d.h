@@ -1,9 +1,6 @@
 #ifndef FDTD_SOLVER_1D
 #define FDTD_SOLVER_1D
-namespace Physics {
-    constexpr double c = 299792458.0;
-    constexpr double c2 = c * c;
-}
+#include "../parameters.h"
 
 using Value = double;
 using Index = int;
@@ -31,7 +28,7 @@ class FDTD_solver_1d{
     }
 
     void develop_e(Value dt_per_dz){
-        dt_per_dz*=(Physics::c2);
+        dt_per_dz*=(Parameters::c2);
         for(Index i=0;i<num_grid;++i){
             e_field.at(i).x -= dt_per_dz*(m_field.p_half.at(i+1).y - m_field.p_half.at(i).y);
             e_field.at(i).y += dt_per_dz*(m_field.p_half.at(i+1).x - m_field.p_half.at(i).x);
