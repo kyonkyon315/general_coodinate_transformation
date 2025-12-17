@@ -2,6 +2,7 @@
 #define ADVECTION_EQUATION_H
 #include "independent.h"
 #include "utils/arg_changer.h"
+#include "utils/tuple_head.h"
 #include <type_traits>
 #include <array>
 #include <utility>
@@ -76,16 +77,20 @@ private:
         return advection_in_calc_space_helper<0,Target_Dim>(indices...);
     }
 
-    template<typename... Ints,typename Tail>
-    void sum_current_helper(const Value U_i_p_half,Ints... indices,Tail tail_index){
-        //indicesの最初のreal_dimension個の値を関数に代入する。
-        if constexpr(sizeof...(indices)==real_dimension){
-            current.at(indices...).z+= U_i_p_half;
-        }
-        else{
-            sum_current_helper(U_i_p_half,indices);
-            //tail_indexを除いて代入。。。再帰的に引数がreal_dimensionにまで減る
-        }
+    template<typename... Indices>
+    void sum_current_helper(const Value U_i_p_half,Indices... indices){
+            
+        static_assert(sizeof...(Indices) >= real_dimension,
+                    "not enough indices");
+
+        auto idx = std::make_tuple(indices...);
+
+        std::apply(
+            [&](auto... head) {
+                current.at(head...).z += U_i_p_half;
+            },
+            Utility::tuple_head<real_dimension>(idx)
+        );
     }
 
     // 再帰ヘルパ：indices を集める
@@ -98,7 +103,7 @@ private:
             //実空間の移流を求めたときに、電流が計算される。
             if constexpr(Target_Dim == 0){
                 //ここで電流を保存したいね。indices の数をreal_dim の数に減らしたい
-                sum_current_helper(U.second,indices...);
+                sum_current_helper<Ints...>(U.second,indices...);
             }
             //増加分を保存
             func_buffer.at(indices...) = U.first-U.second;
