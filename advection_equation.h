@@ -7,14 +7,16 @@
 #include <utility>
 #include <omp.h>
 #include <cmath>
+#include "none.h"
 
 using Value = double;
-template<typename TargetFunction,typename Operators,typename Advections,typename Jacobian,typename Scheme,typename BoundaryCondition>
+template<typename TargetFunction,typename Operators,typename Advections,typename Jacobian,typename Scheme,typename BoundaryCondition,typename Current>
 class AdvectionEquation
 {
 private:
     TargetFunction& target_func;
     TargetFunction func_buffer;
+    Current& current;
     const Operators& operators;
     const Advections& advections;
     const Jacobian& jacobian;
@@ -22,9 +24,30 @@ private:
     const BoundaryCondition& boundary_condition;
 
     static constexpr int dimension = TargetFunction::get_dimension();
+    static constexpr int real_dimension = Current::get_dimension();
+    static constexpr int velo_dimension = dimension - real_dimension;
+
+    static_assert(
+        []()constexpr{
+            if(velo_dimension < 0)return false;
+            for(int i = 0;i < real_dimension; ++i){
+                if(TargetFunction::shape[i]!=Current::shape[i])return false;
+            }
+            return true;
+        }()
+        ,"電流の shape が分布関数の実空間部の shape と一致しません。"
+    );
+
     static constexpr int L = Scheme::used_id_left;
     static constexpr int R = Scheme::used_id_right;
 
+    static constexpr bool need_current = []()constexpr{
+        if constexpr(std::is_same_v<Current,None_current>)return false;
+        return true;
+    }();
+
+
+    
     //連鎖率を用いて、計算空間でのフラックスを計算します。
     template<int I,int Target_Dim,typename... Ints>
     Value advection_in_calc_space_helper(Ints... indices){
@@ -57,9 +80,13 @@ private:
     template<int Depth,int Dim,int Target_Dim,typename... Ints>
     void solve_helper(Value dt, Ints... indices){
         if constexpr(Depth == Dim){
-            const Value df = solve_leaf<Target_Dim>(dt, indices...);
+            const std::pair<Value,Value> U = solve_leaf<Target_Dim>(dt, indices...);
+
+            //ここで電流を保存したいね。indices の数をreal_dim の数に減らしたい
+            current.at(indices...).d0 = U.second;
+            
             //増加分を保存
-            func_buffer.at(indices...) = df;
+            func_buffer.at(indices...) = U.first-U.second;
         }
         else if constexpr(Depth==0){
             //[@TODO]Dim==1のときはomp発動しないようにした方がいいかも。
@@ -81,14 +108,14 @@ private:
 
     // leaf: index_sequence を生成して「index-first」ヘルパを呼ぶ
     template<int Target_Dim, typename... Ints>
-    Value solve_leaf(Value dt, Ints... indices){
+    std::pair<Value,Value> solve_leaf(Value dt, Ints... indices){
         constexpr std::size_t stencil_size = (R - L + 1);
         return solve_leaf_impl_indices<Target_Dim>(dt, std::make_index_sequence<stencil_size>{}, indices...);
     }
 
     // helper: index_sequence を最初の引数に置く（※これで推論が安定）
     template<int Target_Dim, std::size_t... Is, typename... Ints>
-    Value solve_leaf_impl_indices(Value dt, std::index_sequence<Is...>, Ints... indices){
+    std::pair<Value,Value> solve_leaf_impl_indices(Value dt, std::index_sequence<Is...>, Ints... indices){
         // コンパイル時に確定するオフセット配列
         static constexpr int stencil_offsets[] = { (int(Is) + L)... };
 
@@ -114,25 +141,25 @@ private:
         Value nyu_p_half = - dt * (advection+advection_p_1)/2.;
         Value nyu_m_half = - dt * (advection+advection_m_1)/2.;
         
-        Value df = this->scheme.calc_df(
+        std::pair<Value,Value> U = this->scheme.calc_U(
             Utility::arg_changer<Target_Dim, stencil_offsets[Is]>(
                 [this](auto... idxs) -> Value {
                     return this->target_func.at(idxs...);
                 },
                 indices...
             )...,
-            nyu_p_half,nyu_m_half
+            nyu_m_half, nyu_p_half
         );
 
-        if(std::isnan(df)){
+        if(std::isnan(U.first)||std::isnan(U.second)){
             ((std::cout<<indices<<" "),...);
-            std::cout<<"nyu_p_half: "<<nyu_p_half<<"\n";
-            std::cout<<"nyu_m_half: "<<nyu_m_half<<"\n";
+            std::cout<<"nyu_p_half: "<<U.second<<"\n";
+            std::cout<<"nyu_m_half: "<<U.first<<"\n";
             std::cout<<"\n";
             throw 1;
         }
 
-        return df;
+        return U;
     }
 
 public:
@@ -142,14 +169,16 @@ public:
         const Advections& advections,
         const Jacobian& jacobian,
         const Scheme& scheme,
-        const BoundaryCondition& boundary_condition
+        const BoundaryCondition& boundary_condition,
+        Current& current
     ):
         target_func(target_func),
         operators(operators),
         advections(advections),
         jacobian(jacobian),
         scheme(scheme),
-        boundary_condition(boundary_condition)
+        boundary_condition(boundary_condition),
+        current(current)
     {
         static_assert(target_func.get_dimension()==operators.get_num_objects());
         static_assert(target_func.get_dimension()==advections.get_num_objects());

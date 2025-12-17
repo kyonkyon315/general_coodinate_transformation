@@ -10,6 +10,7 @@ class Axis {
     static constexpr int num_grid = LENGTH;
     static constexpr int L_ghost_length = L_GHOST;
     static constexpr int R_ghost_length = R_GHOST;
+
     int operator=(int r){
         return val=r;
     }
