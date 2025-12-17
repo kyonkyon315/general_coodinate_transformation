@@ -76,15 +76,30 @@ private:
         return advection_in_calc_space_helper<0,Target_Dim>(indices...);
     }
 
+    template<typename... Ints,typename Tail>
+    void sum_current_helper(const Value U_i_p_half,Ints... indices,Tail tail_index){
+        //indicesの最初のreal_dimension個の値を関数に代入する。
+        if constexpr(sizeof...(indices)==real_dimension){
+            current.at(indices...).z+= U_i_p_half;
+        }
+        else{
+            sum_current_helper(U_i_p_half,indices);
+            //tail_indexを除いて代入。。。再帰的に引数がreal_dimensionにまで減る
+        }
+    }
+
     // 再帰ヘルパ：indices を集める
     template<int Depth,int Dim,int Target_Dim,typename... Ints>
     void solve_helper(Value dt, Ints... indices){
         if constexpr(Depth == Dim){
             const std::pair<Value,Value> U = solve_leaf<Target_Dim>(dt, indices...);
 
-            //ここで電流を保存したいね。indices の数をreal_dim の数に減らしたい
-            current.at(indices...).d0 = U.second;
-            
+            //[TODO]今のところ実空間は一次元しか考慮していない。
+            //実空間の移流を求めたときに、電流が計算される。
+            if constexpr(Target_Dim == 0){
+                //ここで電流を保存したいね。indices の数をreal_dim の数に減らしたい
+                sum_current_helper(U.second,indices...);
+            }
             //増加分を保存
             func_buffer.at(indices...) = U.first-U.second;
         }

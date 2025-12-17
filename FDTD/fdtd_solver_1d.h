@@ -4,7 +4,7 @@
 
 using Value = double;
 using Index = int;
-//軸の方向はz
+//軸の方向はz　一次元直線座標専門のfdtd
 template<typename ElectricField,typename MagneticField>
 class FDTD_solver_1d{
     using MagneticField_t = typename MagneticField::Element_t;
