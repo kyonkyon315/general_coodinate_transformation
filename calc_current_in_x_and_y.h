@@ -50,11 +50,24 @@ private:
             // ---- leaf ----
             auto f = distfunction.at(x, v...);
 
-            current.at(x).x +=
-                operators.template get_object<1>().translate(x, v...) * f;
 
+            //電流はyee格子により半グリッドずれているので、以下のような実装になる。
+            //j(i)=j(Δx (i+1/2)) = (v f(i) +v f(i+1))/2
+            //
+            //言い換えると、
+            //for i in range
+            //  j(i) += v f(i)/2
+            //  j(i-1) += v f(i)/2
+            
+            current.at(x-1).x +=
+                operators.template get_object<1>().translate(x, v...) * f/2.;
+            current.at(x).x +=
+                operators.template get_object<1>().translate(x, v...) * f/2.;
+
+            current.at(x-1).y +=
+                operators.template get_object<2>().translate(x, v...) * f/2.;
             current.at(x).y +=
-                operators.template get_object<2>().translate(x, v...) * f;
+                operators.template get_object<2>().translate(x, v...) * f/2.;
         }
     }
 public:
