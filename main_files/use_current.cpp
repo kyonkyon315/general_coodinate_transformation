@@ -24,10 +24,6 @@ using Axis_vp = Axis<3,10,3,3>;
 //先頭に入力する型はテンソルの値の型です。その後に続く軸は、通し番号が小さいものほど左に入力してください。
 using DistributionFunction = NdTensorWithGhostCell<Value,Axis_x_,Axis_vr,Axis_vt,Axis_vp>;
 
-//電場の型を定義
-using ElectricField = NdTensorWithGhostCell<Vec3<Value>,Axis_x_>;
-//E(i,j)=E(x=Δx(i+1/2),t=Δt j)
-
 template<typename Element>
 class Pair{
     public:
@@ -39,8 +35,15 @@ class Pair{
 using MagneticField = Pair<NdTensorWithGhostCell<Vec3<Value>,Axis_x_>>;
 //B(i,j).p_half=B(x=Δx i,t=Δt(j+1/2))
 
+//電場の型を定義
+using ElectricField = NdTensorWithGhostCell<Vec3<Value>,Axis_x_>;
+//E(i,j)=E(x=Δx(i+1/2),t=Δt j)
+
 //電流の型を定義
 using Current = NdTensorWithGhostCell<Vec3<Value>,Axis_x_>;
+//current.at(i).z = j_z(x=Δx(i+1/2))
+//current.at(i).x = j_x(x=Δx(i+1/2))
+//current.at(i).y = j_y(x=Δx(i+1/2))
 
 //電流計算が不要の時（磁場固定のときなど）はCurrentをNone_currentにしておく
 //using Current = None_current;
@@ -305,11 +308,11 @@ Jacobian jacobian(
     independent, vp_diff_vx , vp_diff_vy , independent
 );
 }
-/*******************************************
- * 解くべき移流方程式を定義します。           *
+/**********************************************
+ * 解くべき移流方程式を定義します。              *
  * df/dt + v_x df/dx + q/m(E+v*B)・∇_v f = 0 *
- * を例に定義の仕方を解説                    *
- *******************************************/
+ * を例に定義の仕方を解説                       *
+ **********************************************/
 
 //移流項の定義
 //------------------------------------------
@@ -406,7 +409,8 @@ namespace Global{
  * 次に、Flux計算機を選択します。今回は、Umeda2008を用います。
  ****************************************************************************/
 
-using Scheme = Umeda2008;
+//using Scheme = Umeda2008;
+using Scheme = Umeda2008_5;
 namespace Global{
     Scheme scheme;
 }
@@ -551,6 +555,34 @@ namespace Global{
     AdvectionEquation equation(dist_function,operators,advections,jacobian,scheme,boundary_condition,current);
 }
 
+/*
+fdtd 関連
+*/
+
+namespace Global{
+    Norm::Derived<Norm::SI> norm;
+    FDTD_solver_1d fdtd_solver(e_field,m_field,current,norm);
+    CalcCurrent_1d current_calculator(current,dist_function,operators);
+}
+
+template<typename Field>
+void apply_periodic_1d(Field& f)
+{
+    constexpr int N  = Axis_x_::num_grid;
+    constexpr int GL = Axis_x_::L_ghost_length;
+    constexpr int GR = Axis_x_::R_ghost_length;
+
+    for(int g = 1; g <= GL; ++g){
+        f.at(-g) = f.at(N - g);
+    }
+    for(int g = 0; g < GR; ++g){
+        f.at(N + g) = f.at(g);
+    }
+}
+/*
+fdtd関連の設定終わり。
+*/
+
 int main(){
     Value dt = 0.1;
     int num_steps = 100;
@@ -562,7 +594,16 @@ int main(){
         Global::boundary_manager.apply<Axis_vt>();
         Global::equation.solve<Axis_vp>(dt/2.);
         Global::boundary_manager.apply<Axis_vp>();
-        Global::equation.solve<Axis_x_>(dt);
+        Global::equation.solve<Axis_x_>(dt/2.);
+        Global::boundary_manager.apply<Axis_x_>();
+
+        Global::current_calculator.calc();
+        Global::fdtd_solver.develop(dt / grid_size_x_);
+        apply_periodic_1d(Global::e_field);
+        apply_periodic_1d(Global::m_field.p_half);
+        apply_periodic_1d(Global::m_field.m_half);
+
+        Global::equation.solve<Axis_x_>(dt/2.);
         Global::boundary_manager.apply<Axis_x_>();
         Global::equation.solve<Axis_vp>(dt/2.);
         Global::boundary_manager.apply<Axis_vp>();

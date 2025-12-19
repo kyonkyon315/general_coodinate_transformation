@@ -89,11 +89,11 @@ public:
     static const int used_id_left  = -3;
     static const int used_id_right =  3;
 
-    std::pair<Value,Value> calc_U(
+    void calc_U(
         Value f_im3, Value f_im2, Value f_im1,
         Value f_i,
         Value f_ip1, Value f_ip2, Value f_ip3,
-        Value nyu_m_half, Value nyu_p_half
+        Value nyu_m_half, Value nyu_p_half, Value& Um, Value& Up
     )const{
         nyu_p_half = -nyu_p_half;//なぜかnyuを反転しないと逆になってしまう。
         nyu_m_half = -nyu_m_half;//なぜかnyuを反転しないと逆になってしまう。
@@ -140,7 +140,8 @@ public:
                 -nyu_p_half
             );
         }
-        return std::make_pair(U_im_half,U_ip_half);
+        Um = U_im_half;
+        Up = U_ip_half;
     }
 };
 #endif //UMEDA_2008_H
