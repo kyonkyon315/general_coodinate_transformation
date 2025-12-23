@@ -9,29 +9,51 @@ using namespace std;
 //計算空間の座標を設定します。
 //Axis<ここには軸の通し番号をintで入力します。,ここには座標のグリッドの数をintで入力します,3,3>
 //全体をなめる計算においては、通し番号が小さいものほど、より外側のループを担当することになります。
+//また、x,v空間で、∂x/∂v = 0である必要があります。（電流の計算を簡単に行うための措置です。）
+//∂v/∂x = 0 は要求されていません。（例えば背景磁場に沿って速度空間の向きを変えたい時など）
 //通し番号は重複することなく、互いに隣り合った0以上の整数である必要があります。また、0を含む必要があります。
 //計算空間の軸なので、一律Δx=1であり、軸同士は直交しています。
 //最後の3,3 >はゴーストセルのグリッド数です。
-using Axis_x_ = Axis<0,100,3,3>;
-using Axis_vr = Axis<1,100,3,3>;
-using Axis_vt = Axis<2,100,3,3>;
-using Axis_vp = Axis<3,100,3,3>;
+//物理空間↔計算空間の写像は、全単射である必要があります。
+using Axis_x_ = Axis<0,20,3,3>;
+using Axis_vr = Axis<1,10,3,3>;
+using Axis_vt = Axis<2,10,3,3>;
+using Axis_vp = Axis<3,10,3,3>;
 
 //電子分布関数の型を定義
 //先頭に入力する型はテンソルの値の型です。その後に続く軸は、通し番号が小さいものほど左に入力してください。
 using DistributionFunction = NdTensorWithGhostCell<Value,Axis_x_,Axis_vr,Axis_vt,Axis_vp>;
 
+template<typename Element>
+class Pair{
+    public:
+    using Element_t = Element;
+    Element m_half;
+    Element p_half;
+};
+//磁場の型を定義
+using MagneticField = Pair<NdTensorWithGhostCell<Vec3<Value>,Axis_x_>>;
+//B(i,j).p_half=B(x=Δx i,t=Δt(j+1/2))
+
 //電場の型を定義
 using ElectricField = NdTensorWithGhostCell<Vec3<Value>,Axis_x_>;
+//E(i,j)=E(x=Δx(i+1/2),t=Δt j)
 
-//磁場の型を定義
-using MagneticField = NdTensorWithGhostCell<Vec3<Value>,Axis_x_>;
+//電流の型を定義
+using Current = NdTensorWithGhostCell<Vec3<Value>,Axis_x_>;
+//current.at(i).z = j_z(x=Δx(i+1/2))
+//current.at(i).x = j_x(x=Δx(i+1/2))
+//current.at(i).y = j_y(x=Δx(i+1/2))
+
+//電流計算が不要の時（磁場固定のときなど）はCurrentをNone_currentにしておく
+//using Current = None_current;
 
 //グローバル変数としてインスタンス化しておく。
 namespace Global{
     DistributionFunction dist_function;
     ElectricField e_field;
     MagneticField m_field;
+    Current current;
 }
 
 /***********************************************
@@ -286,11 +308,11 @@ Jacobian jacobian(
     independent, vp_diff_vx , vp_diff_vy , independent
 );
 }
-/*******************************************
- * 解くべき移流方程式を定義します。           *
+/**********************************************
+ * 解くべき移流方程式を定義します。              *
  * df/dt + v_x df/dx + q/m(E+v*B)・∇_v f = 0 *
- * を例に定義の仕方を解説                    *
- *******************************************/
+ * を例に定義の仕方を解説                       *
+ **********************************************/
 
 //移流項の定義
 //------------------------------------------
@@ -316,9 +338,15 @@ public:
         const Value vx = Global::physic_vx.translate(calc_x_, calc_vr, calc_vt, calc_vp);
         const Value vy = Global::physic_vy.translate(calc_x_, calc_vr, calc_vt, calc_vp);
         const Value vz = Global::physic_vz.translate(calc_x_, calc_vr, calc_vt, calc_vp);
-        return Parameters::Q/Parameters::m * (      Global::e_field.at(calc_x_).x 
-                     + vy * Global::m_field.at(calc_x_).z
-                     - vz * Global::m_field.at(calc_x_).y );
+
+        //Yee格子を採用しているため、電場はｘ方向に、磁場はｔ方向に補間しなければならない。
+        const Value Ex = (Global::e_field.at(calc_x_-1).x
+                        + Global::e_field.at(calc_x_).x)/2.;
+        const Value By = (Global::m_field.m_half.at(calc_x_).y
+                        + Global::m_field.p_half.at(calc_x_).y)/2.;
+        const Value Bz = (Global::m_field.m_half.at(calc_x_).z
+                        + Global::m_field.p_half.at(calc_x_).z)/2.;
+        return Parameters::Q/Parameters::m * (Ex + vy * Bz - vz * By);
     }
 };
 
@@ -334,9 +362,16 @@ public:
         const Value vx = Global::physic_vx.translate(calc_x_, calc_vr, calc_vt, calc_vp);
         const Value vy = Global::physic_vy.translate(calc_x_, calc_vr, calc_vt, calc_vp);
         const Value vz = Global::physic_vz.translate(calc_x_, calc_vr, calc_vt, calc_vp);
-        return Parameters::Q/Parameters::m * (      Global::e_field.at(calc_x_).y 
-                     + vz * Global::m_field.at(calc_x_).x
-                     - vx * Global::m_field.at(calc_x_).z );
+
+        //Yee格子を採用しているため、電場はｘ方向に、磁場はｔ方向に補間しなければならない。
+        const Value Ey = (Global::e_field.at(calc_x_-1).y
+                        + Global::e_field.at(calc_x_).y)/2.;
+        const Value Bz = (Global::m_field.m_half.at(calc_x_).z
+                        + Global::m_field.p_half.at(calc_x_).z)/2.;
+        const Value Bx = (Global::m_field.m_half.at(calc_x_).x
+                        + Global::m_field.p_half.at(calc_x_).x)/2.;
+                        
+        return Parameters::Q/Parameters::m * (Ey + vz * Bx - vx * Bz);
     }
 };
 
@@ -351,9 +386,16 @@ public:
         const Value vx = Global::physic_vx.translate(calc_x_, calc_vr, calc_vt, calc_vp);
         const Value vy = Global::physic_vy.translate(calc_x_, calc_vr, calc_vt, calc_vp);
         const Value vz = Global::physic_vz.translate(calc_x_, calc_vr, calc_vt, calc_vp);
-        return Parameters::Q/Parameters::m * (      Global::e_field.at(calc_x_).z 
-                     + vx * Global::m_field.at(calc_x_).y
-                     - vy * Global::m_field.at(calc_x_).x );
+
+        //Yee格子を採用しているため、電場はｘ方向に、磁場はｔ方向に補間しなければならない。
+        const Value Ez = (Global::e_field.at(calc_x_-1).z
+                        + Global::e_field.at(calc_x_).z)/2.;
+        const Value Bx = (Global::m_field.m_half.at(calc_x_).x
+                        + Global::m_field.p_half.at(calc_x_).x)/2.;
+        const Value By = (Global::m_field.m_half.at(calc_x_).y
+                        + Global::m_field.p_half.at(calc_x_).y)/2.;
+
+        return Parameters::Q/Parameters::m * (Ez + vx * By - vy * Bx);
     }
 };
 namespace Global{
@@ -367,7 +409,8 @@ namespace Global{
  * 次に、Flux計算機を選択します。今回は、Umeda2008を用います。
  ****************************************************************************/
 
-using Scheme = Umeda2008;
+//using Scheme = Umeda2008;
+using Scheme = Umeda2008_5;
 namespace Global{
     Scheme scheme;
 }
@@ -509,8 +552,36 @@ namespace Global{
 namespace Global{
     Pack operators(physic_x_,physic_vx,physic_vy,physic_vz);
     Pack advections(flux_x_,flux_vx,flux_vy,flux_vz);
-    AdvectionEquation equation(dist_function,operators,advections,jacobian,scheme,boundary_condition);
+    AdvectionEquation equation(dist_function,operators,advections,jacobian,scheme,boundary_condition,current);
 }
+
+/*
+fdtd 関連
+*/
+
+namespace Global{
+    Norm::Derived<Norm::SI> norm;
+    FDTD_solver_1d fdtd_solver(e_field,m_field,current,norm);
+    CalcCurrent_1d current_calculator(current,dist_function,operators);
+}
+
+template<typename Field>
+void apply_periodic_1d(Field& f)
+{
+    constexpr int N  = Axis_x_::num_grid;
+    constexpr int GL = Axis_x_::L_ghost_length;
+    constexpr int GR = Axis_x_::R_ghost_length;
+
+    for(int g = 1; g <= GL; ++g){
+        f.at(-g) = f.at(N - g);
+    }
+    for(int g = 0; g < GR; ++g){
+        f.at(N + g) = f.at(g);
+    }
+}
+/*
+fdtd関連の設定終わり。
+*/
 
 int main(){
     Value dt = 0.1;
@@ -523,7 +594,16 @@ int main(){
         Global::boundary_manager.apply<Axis_vt>();
         Global::equation.solve<Axis_vp>(dt/2.);
         Global::boundary_manager.apply<Axis_vp>();
-        Global::equation.solve<Axis_x_>(dt);
+        Global::equation.solve<Axis_x_>(dt/2.);
+        Global::boundary_manager.apply<Axis_x_>();
+
+        Global::current_calculator.calc();
+        Global::fdtd_solver.develop(dt / grid_size_x_);
+        apply_periodic_1d(Global::e_field);
+        apply_periodic_1d(Global::m_field.p_half);
+        apply_periodic_1d(Global::m_field.m_half);
+
+        Global::equation.solve<Axis_x_>(dt/2.);
         Global::boundary_manager.apply<Axis_x_>();
         Global::equation.solve<Axis_vp>(dt/2.);
         Global::boundary_manager.apply<Axis_vp>();

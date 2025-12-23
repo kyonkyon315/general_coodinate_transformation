@@ -12,3 +12,11 @@
 #include "utils/Timer.h"
 
 #include "projected_saver_2D.hpp"
+#include "parameters.h"
+
+#include "FDTD/fdtd_solver_1d.h"
+#include "calc_current_in_x_and_y.h"
+
+#include "normalization.h"
+
+#include "none.h"

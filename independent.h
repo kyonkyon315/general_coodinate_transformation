@@ -1,6 +1,7 @@
 #ifndef INDEPENDENT_H
 #define INDEPENDENT_H
 // --- (微分ゼロ) を表すクラス ---
+using Value = double;
 class Independent
 {
 public:

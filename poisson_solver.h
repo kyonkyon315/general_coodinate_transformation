@@ -6,6 +6,12 @@
 //1d専用
 using Value = double;
 
+/*
+//電場の型を定義
+using ElectricField = NdTensorWithGhostCell<Vec3<Value>,Axis_x_>;
+//E(i,j)=E(x=Δx(i+1/2),t=Δt j)
+*/
+
 template<typename DistFunc,typename ElectricField>
 class PoissonSolver{
 public:

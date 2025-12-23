@@ -1,5 +1,6 @@
 #ifndef UMEDA_2008_H
 #define UMEDA_2008_H
+#include <utility>
 using Value = double;
 
 /*
@@ -79,25 +80,23 @@ private:
 
 public:
     /********************************************************************************************
-     * Limiterとして、関数calc_df　は必須である。最後の引数がnyuであり、それ以外の引数が近接グリッドの
+     * Limiterとして、関数calc_U_ip_half　は必須である。最後の引数がnyuであり、それ以外の引数が近接グリッドの
      * 分布関数値である。 
-     * 次ステップでのf_iの増加分を出力する。
+     * U[i+1/2]を出力する
      * f[i]の増加分を計算するために入力として受け取る分布関数がF[i-x]～F[i+y]のx+y+1個である場合、
      * ユーザーはused_id_left = -x,used_id_right = yとして定義しなければならない。
      *********************************************************************************************/
     static const int used_id_left  = -3;
     static const int used_id_right =  3;
-    // 修正版：最悪ケースの7点を受け取り、符号に応じて正しいセンタリングを行う      
-    Value calc_df(
+
+    void calc_U(
         Value f_im3, Value f_im2, Value f_im1,
         Value f_i,
         Value f_ip1, Value f_ip2, Value f_ip3,
-        Value nyu_m_half, Value nyu_p_half
+        Value nyu_m_half, Value nyu_p_half, Value& Um, Value& Up
     )const{
-        
-        nyu_m_half = -nyu_m_half;//なぜかnyuを反転しないと逆になってしまう。
         nyu_p_half = -nyu_p_half;//なぜかnyuを反転しないと逆になってしまう。
-        Value delta_f_i = 0.0;
+        nyu_m_half = -nyu_m_half;//なぜかnyuを反転しないと逆になってしまう。
         Value U_ip_half;
         Value U_im_half;
         if (nyu_m_half >= 0.0){
@@ -120,6 +119,7 @@ public:
                 -nyu_m_half
             );
         }
+
         if (nyu_p_half >= 0.0){
             U_ip_half = calc_flux_rightward(
                 /*fm2*/ f_im2,  
@@ -140,10 +140,8 @@ public:
                 -nyu_p_half
             );
         }
-        delta_f_i = U_im_half - U_ip_half;
-        
-
-        return delta_f_i;
+        Um = U_im_half;
+        Up = U_ip_half;
     }
 };
 #endif //UMEDA_2008_H

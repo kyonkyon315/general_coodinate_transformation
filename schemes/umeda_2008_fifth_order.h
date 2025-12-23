@@ -10,7 +10,7 @@ private:
 
     // calc_flux_rightward5 は中心 f0 を用いる (fm2,fm1,f0,fp1,fp2)
     // nyu >= 0 (左→右 情報) を想定した計算
-    static inline Value calc_flux_rightward5(
+    static inline Value calc_flux_rightward(
         Value fm2, Value fm1, Value f0, Value fp1, Value fp2,
         Value nyu
     ){
@@ -91,34 +91,28 @@ public:
     static const int used_id_left  = -3;
     static const int used_id_right =  3;
 
-    // f_im3 .. f_ip3 の 7 点を受け取り、i に対する増分を返す
-    Value calc_df(
-        Value f_im3, Value f_im2, Value f_im1,
-        Value f_i,
-        Value f_ip1, Value f_ip2, Value f_ip3,
-        Value nyu_m_half, Value nyu_p_half
-    ) const {
-        // 元コードに合わせて符号反転
-        nyu_m_half = -nyu_m_half;
-        nyu_p_half = -nyu_p_half;
-
-        Value U_im_half, U_ip_half;
-
-        // 左境界側フラックス U_{i-1/2}
-        if (nyu_m_half >= 0.0) {
-            // center を f_im1 (i-1) に合わせる配置：
-            // fm2 = f_im3, fm1 = f_im2, f0 = f_im1, fp1 = f_i, fp2 = f_ip1
-            U_im_half = calc_flux_rightward5(
-                /*fm2*/ f_im3,
-                /*fm1*/ f_im2,
-                /*f0*/  f_im1,
-                /*fp1*/ f_i,
-                /*fp2*/ f_ip1,
-                nyu_m_half
+    void calc_U(
+            Value f_im3, Value f_im2, Value f_im1,
+            Value f_i,
+            Value f_ip1, Value f_ip2, Value f_ip3,
+            Value nyu_m_half, Value nyu_p_half, Value& Um, Value& Up
+        )const{
+        nyu_p_half = - nyu_p_half;//なぜかnyuを反転しないと逆になってしまう。
+        nyu_m_half = - nyu_m_half;//なぜかnyuを反転しないと逆になってしまう。
+        Value U_ip_half;
+        Value U_im_half;
+        if (nyu_m_half >= 0.0){
+            U_im_half = calc_flux_rightward(
+                /*fm2*/ f_im3,  // i-2
+                /*fm1*/ f_im2,  // i-1
+                /*f0*/  f_im1,    // i
+                /*fp1*/ f_i,  // i+1
+                /*fp2*/ f_ip1,  // i+2
+                nyu_m_half // nyu は既に正
             );
-        } else {
-            // 負の場合は向きを反転して計算（符号も反転）
-            U_im_half = - calc_flux_rightward5(
+        }
+        else{
+            U_im_half = - calc_flux_rightward(
                 /*fm2*/ f_ip2,
                 /*fm1*/ f_ip1,
                 /*f0*/  f_i,
@@ -128,19 +122,18 @@ public:
             );
         }
 
-        // 右境界側フラックス U_{i+1/2}
-        if (nyu_p_half >= 0.0) {
-            // center = f_i
-            U_ip_half = calc_flux_rightward5(
-                /*fm2*/ f_im2,
-                /*fm1*/ f_im1,
-                /*f0*/  f_i,
-                /*fp1*/ f_ip1,
-                /*fp2*/ f_ip2,
-                nyu_p_half
+        if (nyu_p_half >= 0.0){
+            U_ip_half = calc_flux_rightward(
+                /*fm2*/ f_im2,  
+                /*fm1*/ f_im1,    
+                /*f0*/  f_i,  
+                /*fp1*/ f_ip1,  
+                /*fp2*/ f_ip2,  
+                nyu_p_half // nyu は既に正
             );
-        } else {
-            U_ip_half = - calc_flux_rightward5(
+        }
+        else{
+            U_ip_half = - calc_flux_rightward(
                 /*fm2*/ f_ip3,
                 /*fm1*/ f_ip2,
                 /*f0*/  f_ip1,
@@ -149,9 +142,8 @@ public:
                 -nyu_p_half
             );
         }
-
-        Value delta_f_i = U_im_half - U_ip_half;
-        return delta_f_i;
+        Um = U_im_half;
+        Up = U_ip_half;
     }
 };
 
