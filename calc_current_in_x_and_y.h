@@ -58,15 +58,18 @@ private:
             //for i in range
             //  j(i) += v f(i)/2
             //  j(i-1) += v f(i)/2
+
+            //[todo]実空間のやこびあんでスケールしないといけない
+            std::cout<<"[todo]calc_current_in_x_and_y l.63";
             
-            current.at(x-1).x +=
+            current.at(x-1).x -=
                 operators.template get_object<1>().translate(x, v...) * f/2.;
-            current.at(x).x +=
+            current.at(x).x -=
                 operators.template get_object<1>().translate(x, v...) * f/2.;
 
-            current.at(x-1).y +=
+            current.at(x-1).y -=
                 operators.template get_object<2>().translate(x, v...) * f/2.;
-            current.at(x).y +=
+            current.at(x).y -=
                 operators.template get_object<2>().translate(x, v...) * f/2.;
         }
     }

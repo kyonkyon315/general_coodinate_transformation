@@ -97,8 +97,8 @@ public:
             Value f_ip1, Value f_ip2, Value f_ip3,
             Value nyu_m_half, Value nyu_p_half, Value& Um, Value& Up
         )const{
-        nyu_p_half = -nyu_p_half;//なぜかnyuを反転しないと逆になってしまう。
-        nyu_m_half = -nyu_m_half;//なぜかnyuを反転しないと逆になってしまう。
+        nyu_p_half = - nyu_p_half;//なぜかnyuを反転しないと逆になってしまう。
+        nyu_m_half = - nyu_m_half;//なぜかnyuを反転しないと逆になってしまう。
         Value U_ip_half;
         Value U_im_half;
         if (nyu_m_half >= 0.0){

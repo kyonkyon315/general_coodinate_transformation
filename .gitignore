@@ -9,3 +9,6 @@ visualizer/advection_simulation.gif
 FDTD/test/a.out
 FDTD/test/Ex_animation.gif
 FDTD/test/out/
+無次元化.pdf
+main_files/Ex_t.dat
+main_files/f.dat

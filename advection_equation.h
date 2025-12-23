@@ -86,20 +86,23 @@ private:
         return advection_in_calc_space_helper<0,Target_Dim>(indices...);
     }
 
+
     template<typename... Indices>
-    void sum_current_helper(const Value U_i_p_half,Indices... indices){
+    void sum_current_helper(const Value dt,const Value U_i_p_half,Indices... indices){
             
         static_assert(sizeof...(Indices) >= real_dimension,
                     "not enough indices");
 
         if constexpr(real_dimension == 1){
-            current.at(std::get<0>(std::tie(indices...))).z += U_i_p_half;
+            current.at(std::get<0>(std::tie(indices...))).z -= U_i_p_half/dt;
         }
         else{
+            throw 1;
             auto idx = std::make_tuple(indices...);
             std::apply(
                 [&](auto... head){
-                    current.at(head...).z += U_i_p_half;
+                    current.at(head...).z += U_i_p_half/dt;
+                    //current_tilde = U/dt_tilde
                 },
                 Utility::tuple_head<real_dimension>(idx)
             );
@@ -118,7 +121,7 @@ private:
             //実空間の移流を求めたときに、電流が計算される。
             if constexpr(Target_Dim == 0 && need_current){ 
                 //ここで電流を保存したいね。indices の数をreal_dim の数に減らしたい
-                sum_current_helper(Up,indices...);
+                sum_current_helper(dt,Up,indices...);
             }
             //増加分を保存
             func_buffer.at(indices...) = Um-Up;
@@ -128,6 +131,9 @@ private:
             constexpr int axis_len = TargetFunction::shape[Depth];
             #pragma omp parallel for
             for(int i=0;i<axis_len;++i){
+                if constexpr(Target_Dim ==0 && need_current){
+                    current.at(i).z = 0.;
+                }
                 // 再帰：indices に i を追加
                 solve_helper<Depth+1,Dim,Target_Dim>(dt, indices..., i);
             }
