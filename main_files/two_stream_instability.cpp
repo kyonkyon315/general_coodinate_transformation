@@ -17,7 +17,7 @@ using namespace std;
 //最後の3,3 >はゴーストセルのグリッド数です。
 //物理空間↔計算空間の写像は、全単射である必要があります。
 using Axis_x_ = Axis<0,256,3,3>;
-using Axis_vx = Axis<1,256,3,3>;
+using Axis_vx = Axis<1,512,3,3>;
 
 
 //電子分布関数の型を定義
@@ -62,10 +62,10 @@ namespace Global{
  ***********************************************/
 
 // --- グローバル定数とヘルパー関数の定義 ---
-constexpr Value grid_size_x_ = 20./(Value)Axis_x_::num_grid * Norm::Param::debye_length/Norm::Base::x0;
+constexpr Value grid_size_x_ = 0.5*3.3;
 //0.3 * lambda_D
 
-constexpr Value v_max = 15.* Norm::Param::v_thermal/Norm::Base::v0;
+constexpr Value v_max = 5.*3.3* Norm::Param::v_thermal/Norm::Base::v0;
 constexpr Value grid_size_vx = 2. * v_max / Axis_vx::num_grid;
 
 
@@ -326,10 +326,10 @@ fdtd関連の設定終わり。
 
 /*分布関数の初期化関数の設定*/
 Value fM(Value v_tilde/*無次元量が入る*/){
-    const Value U = Norm::Param::v_thermal / Norm::Base::v0;
-    return Norm::Coef::Ne_tilde * std::exp(-(v_tilde-2.*U)*(v_tilde-2.*U)/2.)
+    const Value U = 3.3 * Norm::Param::v_thermal / Norm::Base::v0;
+    return Norm::Coef::Ne_tilde * std::exp(-(v_tilde-U)*(v_tilde-U)/2.)
            / std::sqrt(2*M_PI)*(grid_size_x_*grid_size_vx)/2.
-           + Norm::Coef::Ne_tilde * std::exp(-(v_tilde+2.*U)*(v_tilde+2.*U)/2.)
+           + Norm::Coef::Ne_tilde * std::exp(-(v_tilde+U)*(v_tilde+U)/2.)
            / std::sqrt(2*M_PI)*(grid_size_x_*grid_size_vx)/2.;
     //Ne_tilde = int f_tilde dv_tilde^3
 }
@@ -376,8 +376,8 @@ void initialize_distribution()
     std::uniform_real_distribution<Value> uni(-1.0,1.0);
 
     for(int ix=0; ix<Axis_x_::num_grid; ix++){
-        //Value eta = uni(rng);  // x 依存ノイズ
-        Value eta = std::sin(30.*2.*M_PI*(Value)ix/(Value)Axis_x_::num_grid);
+        Value eta = uni(rng);  // x 依存ノイズ
+        //Value eta = std::sin(30.*2.*M_PI*(Value)ix/(Value)Axis_x_::num_grid);
         Value base = 1.;
         //if(ix>Axis_x_::num_grid/4 && ix<3*Axis_x_::num_grid/4)base = 0.01;
 
@@ -434,12 +434,16 @@ void solve_poisson_1d_periodic() {
 int main(){
     initialize_distribution();
     solve_poisson_1d_periodic();
-    Value dt_vlasov  = grid_size_x_ / v_max;
-    Value dt_maxwell = grid_size_x_ / (Norm::Param::c/Norm::Base::v0);
-
-    Value dt = 0.1 * std::min(dt_vlasov, dt_maxwell);
+    //Value dt_vlasov  = grid_size_x_ / v_max;
+    //Value dt_maxwell = grid_size_x_ / (Norm::Param::c/Norm::Base::v0);
+    //Value dt = 0.1 * std::min(dt_vlasov, dt_maxwell);
     //Value dt = 0.1 * dt_vlasov;
-    int num_steps = 20000;
+
+
+    //Value dt = 0.1 / Norm::Param::omega_pe/Norm::Base::t0;
+    Value dt = 0.01 ;
+
+    int num_steps = 100000;
     std::ofstream ex_log("Ex_t.dat");
     std::ofstream f_log("f.dat");
     ProjectedSaver2D projected_saver(
