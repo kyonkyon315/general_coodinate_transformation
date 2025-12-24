@@ -17,12 +17,14 @@ using namespace std;
 //最後の3,3 >はゴーストセルのグリッド数です。
 //物理空間↔計算空間の写像は、全単射である必要があります。
 using Axis_x_ = Axis<0,256,3,3>;
-using Axis_vx = Axis<1,512,3,3>;
+using Axis_vr = Axis<1,512,3,3>;
+using Axis_vt = Axis<2,64,3,3>;
+using Axis_vp = Axis<3,32,3,3>;
 
 
 //電子分布関数の型を定義
 //先頭に入力する型はテンソルの値の型です。その後に続く軸は、通し番号が小さいものほど左に入力してください。
-using DistributionFunction = NdTensorWithGhostCell<Value,Axis_x_,Axis_vx>;
+using DistributionFunction = NdTensorWithGhostCell<Value, Axis_x_, Axis_vr, Axis_vt, Axis_vp>;
 
 template<typename Element>
 class Pair{
@@ -66,7 +68,16 @@ constexpr Value grid_size_x_ = 0.3 * 3.3 * Norm::Param::debye_length/Norm::Base:
 //0.3 * lambda_D
 
 constexpr Value v_max = 5.* 3.3 * Norm::Param::v_thermal/Norm::Base::v0;
-constexpr Value grid_size_vx = 2. * v_max / Axis_vx::num_grid;
+constexpr Value grid_size_vr = 2. * v_max / Axis_vr::num_grid;
+constexpr Value grid_size_vt = M_PI / (double)(Axis_vt::num_grid);
+constexpr Value grid_size_vp = 2. *M_PI / (double)(Axis_vp::num_grid);
+
+
+Value vr(int calc_vr){ return grid_size_vr * (0.5 + (double)calc_vr);}
+
+Value vt(int calc_vt){ return grid_size_vt * (0.5 + (double)calc_vt);}
+
+Value vp(int calc_vp){ return grid_size_vp * (0.5 + (double)calc_vp);}
 
 
 // --- 物理量クラス ---
@@ -79,7 +90,7 @@ class Physic_x_
 {
 public:
     Physic_x_(){}
-    Value translate(int calc_x,int calc_vx)const{
+    Value translate(int calc_x,int calc_vr,int calc_vt,int calc_vp)const{
         return grid_size_x_*calc_x;
     }
     static const int label = 0;
@@ -87,40 +98,190 @@ public:
 
 class Physic_vx
 {
+private:
+    NdTensor<Value,Axis_vr,Axis_vt,Axis_vp> table;
+    static Value honestly_translate(int calc_vr,int calc_vt,int calc_vp){
+        // v_x = vr * sin(vt) * cos(vp)
+        return vr(calc_vr) * sin(vt(calc_vt)) * cos(vp(calc_vp));
+    }
 public:
-    Physic_vx(){}
-    Value translate(int calc_x_,int calc_vx)const{
-        return grid_size_vx*(calc_vx - 0.5 * (Value)Axis_vx::num_grid);    
+    Physic_vx(){table.set_value(honestly_translate);}
+    Value translate(int calc_x_,int calc_vr,int calc_vt,int calc_vp)const{
+        return table.at(calc_vr,calc_vt,calc_vp);    
     }
     static const int label = 1;
 };
+
+class Physic_vy
+{
+private:
+    NdTensor<Value,Axis_vr,Axis_vt,Axis_vp> table;
+    static Value honestly_translate(int calc_vr,int calc_vt,int calc_vp){
+        // v_y = vr * sin(vt) * sin(vp)
+        return vr(calc_vr) * sin(vt(calc_vt)) * sin(vp(calc_vp));
+    }
+public:
+    Physic_vy(){table.set_value(honestly_translate);}
+    Value translate(int calc_x_,int calc_vr,int calc_vt,int calc_vp)const{
+        return table.at(calc_vr,calc_vt,calc_vp);    
+    }
+    static const int label = 2;
+};
+
+class Physic_vz
+{
+private:
+    NdTensor<Value,Axis_vr,Axis_vt> table;
+    static Value honestly_translate(int calc_vr,int calc_vt){
+        // v_z = vr * cos(vt)
+        return vr(calc_vr) * cos(vt(calc_vt));
+    }
+public:
+    Physic_vz(){table.set_value(honestly_translate);}
+    Value translate(int calc_x_,int calc_vr,int calc_vt,int calc_vp)const{
+        return table.at(calc_vr,calc_vt);    
+    }
+    static const int label = 3;
+};
+
 
 //グローバル変数としてインスタンス化しておく。
 namespace Global{
     Physic_x_ physic_x_;
     Physic_vx physic_vx;
+    Physic_vy physic_vy;
+    Physic_vz physic_vz;
 }
 /***********************************************
  * 計算軸を物理軸で微分した値の関数を書きます　(始)*
  ***********************************************/
 
-
-
 class X__diff_x_
 {
 public:
     X__diff_x_(){}
-    Value at(int calc_x_,int calc_vx)const{
+    Value at(int calc_x_,int calc_vr,int calc_vt,int calc_vp)const{
         return 1./grid_size_x_;
     }
 };
 
-class Vx_diff_vx
+class Vr_diff_vx
 {
+private:
+    NdTensor<Value,Axis_vt,Axis_vp> table;
+    static Value honestly_calc(int calc_vt,int calc_vp){
+        // d(vr) / d(vx) = sin(theta) * cos(phi)
+        return sin(vt(calc_vt)) * cos(vp(calc_vp)) / grid_size_vr;
+    }
 public:
-    Vx_diff_vx(){}
-    Value at(int calc_x_,int calc_vx)const{
-        return 1./grid_size_vx;
+    Vr_diff_vx(){table.set_value(honestly_calc);}
+    Value at(int calc_x_,int calc_vr,int calc_vt,int calc_vp)const{
+        return table.at(calc_vt,calc_vp);
+    }
+};
+
+class Vr_diff_vy
+{
+private:
+    NdTensor<Value,Axis_vt,Axis_vp> table;
+    static Value honestly_calc(int calc_vt,int calc_vp){
+        // d(vr) / d(vy) = sin(theta) * sin(phi)
+        return sin(vt(calc_vt)) * sin(vp(calc_vp)) / grid_size_vr;
+    }
+public:
+    Vr_diff_vy(){table.set_value(honestly_calc);}
+    Value at(int calc_x_,int calc_vr,int calc_vt,int calc_vp)const{
+        return table.at(calc_vt,calc_vp);
+    }
+};
+
+class Vr_diff_vz
+{
+private:
+    NdTensor<Value,Axis_vt,Axis_vp> table;
+    static Value honestly_calc(int calc_vt,int calc_vp){
+        // d(vr) / d(vz) = cos(theta)
+        return cos(vt(calc_vt)) / grid_size_vr;
+    }
+public:
+    Vr_diff_vz(){table.set_value(honestly_calc);}
+    Value at(int calc_x_,int calc_vr,int calc_vt,int calc_vp)const{
+        return table.at(calc_vt,calc_vp);
+    }
+};
+
+class Vt_diff_vx
+{
+private:
+    NdTensor<Value,Axis_vr,Axis_vt,Axis_vp> table;
+    static Value honestly_calc(int calc_vr,int calc_vt,int calc_vp){
+        // d(v_theta) / d(vx) = cos(theta) * cos(phi) / vr
+        return cos(vt(calc_vt)) * cos(vp(calc_vp)) / (vr(calc_vr) * grid_size_vt);
+    }
+public:
+    Vt_diff_vx(){table.set_value(honestly_calc);}
+    Value at(int calc_x_,int calc_vr,int calc_vt,int calc_vp)const{
+        return table.at(calc_vr,calc_vt,calc_vp);
+    }
+};
+
+class Vt_diff_vy
+{
+private:
+    NdTensor<Value,Axis_vr,Axis_vt,Axis_vp> table;
+    static Value honestly_calc(int calc_vr,int calc_vt,int calc_vp){
+        // d(v_theta) / d(vy) = cos(theta) * sin(phi) / vr
+        return cos(vt(calc_vt)) * sin(vp(calc_vp)) / (vr(calc_vr) * grid_size_vt);
+    }
+public:
+    Vt_diff_vy(){table.set_value(honestly_calc);}
+    Value at(int calc_x_,int calc_vr,int calc_vt,int calc_vp)const{
+        return table.at(calc_vr,calc_vt,calc_vp);
+    }
+};
+
+class Vt_diff_vz
+{
+private:
+    NdTensor<Value,Axis_vr,Axis_vt,Axis_vp> table;
+    static Value honestly_calc(int calc_vr,int calc_vt,int calc_vp){
+        // d(v_theta) / d(vz) = -sin(theta) / vr
+        return -sin(vt(calc_vt)) / (vr(calc_vr) * grid_size_vt);
+    }
+public:
+    Vt_diff_vz(){table.set_value(honestly_calc);}
+    Value at(int calc_x_,int calc_vr,int calc_vt,int calc_vp)const{
+        return table.at(calc_vr,calc_vt,calc_vp);
+    }
+};
+
+class Vp_diff_vx
+{
+private:
+    NdTensor<Value,Axis_vr,Axis_vt,Axis_vp> table;
+    static Value honestly_calc(int calc_vr,int calc_vt,int calc_vp){
+        // d(v_phi) / d(vx) = -sin(phi) / (vr * sin(theta))
+        return -sin(vp(calc_vp)) / (vr(calc_vr) * sin(vt(calc_vt)) * grid_size_vp);
+    }
+public:
+    Vp_diff_vx(){table.set_value(honestly_calc);}
+    Value at(int calc_x_,int calc_vr,int calc_vt,int calc_vp)const{
+        return table.at(calc_vr,calc_vt,calc_vp);
+    }
+};
+
+class Vp_diff_vy
+{
+private:
+    NdTensor<Value,Axis_vr,Axis_vt,Axis_vp> table;
+    static Value honestly_calc(int calc_vr,int calc_vt,int calc_vp){
+        // d(v_phi) / d(vy) = cos(phi) / (vr * sin(theta))
+        return cos(vp(calc_vp)) / (vr(calc_vr) * sin(vt(calc_vt)) * grid_size_vp);
+    }
+public:
+    Vp_diff_vy(){table.set_value(honestly_calc);}
+    Value at(int calc_x_,int calc_vr,int calc_vt,int calc_vp)const{
+        return table.at(calc_vr,calc_vt,calc_vp);
     }
 };
 
@@ -128,9 +289,15 @@ public:
 namespace Global{
     const Independent independent;
     const X__diff_x_ x__diff_x_;
-    const Vx_diff_vx vx_diff_vx;
+    const Vr_diff_vx vr_diff_vx;
+    const Vr_diff_vy vr_diff_vy;
+    const Vr_diff_vz vr_diff_vz;
+    const Vt_diff_vx vt_diff_vx;
+    const Vt_diff_vy vt_diff_vy;
+    const Vt_diff_vz vt_diff_vz;
+    const Vp_diff_vx vp_diff_vx;
+    const Vp_diff_vy vp_diff_vy;
 }
-
 /*******************************************************************
  * Jacobian行列を定義します。上で作成したクラスを行列風に並べてください。*
  * 互いに独立な軸の箇所（微分が０）はIndependent classを入れてください。*
@@ -141,12 +308,17 @@ namespace Global{
 
 namespace Global{
 Jacobian jacobian(
-    x__diff_x_ , independent, 
-    independent, vx_diff_vx 
+    x__diff_x_ , independent, independent, independent,
+    independent, vr_diff_vx , vr_diff_vy , vr_diff_vz ,
+    independent, vt_diff_vx , vt_diff_vy , vt_diff_vz ,
+    independent, vp_diff_vx , vp_diff_vy , independent
 );
 }
-Value jacobi_det(int ix,int iv){
-    return grid_size_x_*grid_size_vx;
+
+Value jacobi_det(int calc_x_, int calc_vr, int calc_vt, int calc_vp){
+    const Value r = vr(calc_vr);
+    const Value v_t = vt(calc_vt);
+    return r*r*std::sin(v_t)*grid_size_x_*grid_size_vr*grid_size_vt*grid_size_vp;
 }
 /**********************************************
  * 解くべき移流方程式を定義します。              *
@@ -161,34 +333,100 @@ Value jacobi_det(int ix,int iv){
 class Fx_ {
 public:
     Fx_(){}
-    Value at(int calc_x_, int calc_vx) const {
-        return Global::physic_vx.translate(calc_x_, calc_vx);
+    Value at(int calc_x_, int calc_vr, int calc_vt, int calc_vp) const {
+        return Global::physic_vx.translate(calc_x_, calc_vr, calc_vt, calc_vp);
     }
 };
 
 //------------------------------------------
-// 2. q/m (E + v×B)_x
+// 4. q/m (E + v×B)_x
 //------------------------------------------
 class Fvx {
 private:
 public:
     Fvx(){}
-
-    Value at(int calc_x_, int calc_vx) const {
+    Value at(int calc_x_, int calc_vr, int calc_vt, int calc_vp) const {
         //速度空間の境界でフラックスが0になるように、移流を反対称にする。
-        if (calc_vx == -1){
-            return - at(calc_x_, 0);
-        }
-        else if(calc_vx == Axis_vx::num_grid){
-            return - at(calc_x_, Axis_vx::num_grid-1);
+        if(calc_vr == Axis_vr::num_grid){
+            return - at(calc_x_, Axis_vr::num_grid-1,calc_vt, calc_vp);
         }
         else{
+            const Value vy = Global::physic_vy.translate(calc_x_, calc_vr, calc_vt, calc_vp);
+            const Value vz = Global::physic_vz.translate(calc_x_, calc_vr, calc_vt, calc_vp);
+            /*
+            /磁場の型を定義
+            using MagneticField = Pair<NdTensorWithGhostCell<Vec3<Value>,Axis_x_>>;
+            //B(i,j).p_half=B(x=Δx i,t=Δt(j+1/2))
+
+            //電場の型を定義
+            using ElectricField = NdTensorWithGhostCell<Vec3<Value>,Axis_x_>;
+            //E(i,j)=E(x=Δx(i+1/2),t=Δt j)
+            */
             //Yee格子を採用しているため、電場はｘ方向に、磁場はｔ方向に補間しなければならない。
-            const Value Ex = (Global::e_field.at(calc_x_-1).z
+            const Value Ex = (Global::e_field.at(calc_x_-1).x
+                            + Global::e_field.at(calc_x_).x)/2.;
+            const Value Bz = (Global::m_field.m_half.at(calc_x_).z
+                            + Global::m_field.p_half.at(calc_x_).z);
+            const Value By = (Global::m_field.m_half.at(calc_x_).y
+                            + Global::m_field.p_half.at(calc_x_).y);
+            return -Ex-vy*Bz+vz*By;//電子の電荷が負なので - がつく
+            //無次元化しているので、電荷や電子質量は必要ない
+        }
+    }
+};
+
+//------------------------------------------
+// 4. q/m (E + v×B)_y
+//------------------------------------------
+class Fvy {
+private:
+public:
+    Fvy(){}
+
+    
+    Value at(int calc_x_, int calc_vr, int calc_vt, int calc_vp) const {
+        //速度空間の境界でフラックスが0になるように、移流を反対称にする。
+        if(calc_vr == Axis_vr::num_grid){
+            return - at(calc_x_, Axis_vr::num_grid-1,calc_vt, calc_vp);
+        }
+        else{
+            const Value vx = Global::physic_vx.translate(calc_x_, calc_vr, calc_vt, calc_vp);
+            const Value vz = Global::physic_vz.translate(calc_x_, calc_vr, calc_vt, calc_vp);
+            
+            const Value Ey = (Global::e_field.at(calc_x_-1).y
+                            + Global::e_field.at(calc_x_).y)/2.;
+            const Value Bx = (Global::m_field.m_half.at(calc_x_).x
+                            + Global::m_field.p_half.at(calc_x_).x);
+            const Value Bz = (Global::m_field.m_half.at(calc_x_).z
+                            + Global::m_field.p_half.at(calc_x_).z);
+            return -Ey-vz*Bx+vx*Bz;
+        }
+    }
+};
+
+//------------------------------------------
+// 4. q/m (E + v×B)_z
+//------------------------------------------
+class Fvz {
+private:
+public:
+    Fvz(){}
+    Value at(int calc_x_, int calc_vr, int calc_vt, int calc_vp) const {
+        //速度空間の境界でフラックスが0になるように、移流を反対称にする。
+        if(calc_vr == Axis_vr::num_grid){
+            return - at(calc_x_, Axis_vr::num_grid-1,calc_vt, calc_vp);
+        }
+        else{
+            const Value vx = Global::physic_vx.translate(calc_x_, calc_vr, calc_vt, calc_vp);
+            const Value vy = Global::physic_vy.translate(calc_x_, calc_vr, calc_vt, calc_vp);
+            
+            const Value Ez = (Global::e_field.at(calc_x_-1).z
                             + Global::e_field.at(calc_x_).z)/2.;
-            return -Ex;//電子の電荷が負なので - がつく
-            //return Parameters::Q/Parameters::m * Ex;
-            //規格化したので移流項はExのみ
+            const Value Bx = (Global::m_field.m_half.at(calc_x_).x
+                            + Global::m_field.p_half.at(calc_x_).x);
+            const Value By = (Global::m_field.m_half.at(calc_x_).y
+                            + Global::m_field.p_half.at(calc_x_).y);
+            return -Ez-vx*By+vy*Bx;
         }
     }
 };
@@ -196,14 +434,16 @@ public:
 namespace Global{
     Fx_ flux_x_;
     Fvx flux_vx;
+    Fvy flux_vy;
+    Fvz flux_vz;
 }
 
 /****************************************************************************
- * 次に、Flux計算機を選択します。今回は、Umeda2008を用います。
+ * 次に、輸送方程式計算機を選択します。今回は、Umeda2008を用います。
  ****************************************************************************/
 
-//using Scheme = Umeda2008;
-using Scheme = Umeda2008_5;
+//using Scheme = Umeda2008;//3次精度
+using Scheme = Umeda2008_5;//5次精度　特に理由がない限り、3次精度ではなくこちらを使ったほうがよい。
 namespace Global{
     Scheme scheme;
 }
@@ -212,8 +452,8 @@ namespace Global{
  * ここで、境界条件を設定することと、ゴーストセルの更新方法を設定することは同値です。
  * ユーザーの目的を満たすようなゴーストセルの更新方法を設定してください。
  * 
- * 例えば、x方向に周期境界条件を用いたいならば、ゴーストセルは次のように更新すべきだ
- * ということは自明でしょう。
+ * 例えば、x方向に周期境界条件を用いたいならば、ゴーストセルは次のように更新すべきで
+ * しょう。
  * f(-x) ← f(x_length-x)
  * f(x_length+x) ← f(x)
  * 
@@ -230,40 +470,96 @@ class BoundaryCondition_x_
 public:
     static const int label = 0;
     template<typename Func>
-    static Value left(Func func,int calc_x_, int calc_vx){
-        return func(calc_x_ + Axis_x_::num_grid, calc_vx);
+    static Value left(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp){
+        return func(-calc_x_, calc_vr, calc_vt, calc_vp);
     }
-
     template<typename Func>
-    static Value right(Func func,int calc_x_, int calc_vx){
-        return func(calc_x_ - Axis_x_::num_grid, calc_vx);
+    static Value right(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp){
+        return func(calc_x_ - Axis_x_::num_grid, calc_vr, calc_vt, calc_vp);
     }
 };
-class BoundaryCondition_vx
+
+class BoundaryCondition_vr
 {
 public:
-static const int label = 1;
+    static const int label = 1;
     template<typename Func>
-    static Value left(Func func,int calc_x_, int calc_vx){
-        return func(calc_x_, calc_vx + Axis_vx::num_grid);
+    static Value left(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp){
+        static_assert(Axis_vp::num_grid%2 == 0,"v_phy空間のグリッド数は偶数である必要がある");
+        constexpr int vp_half_num_grid=Axis_vp::num_grid/2;
+        const int index_vp=(
+            calc_vp < vp_half_num_grid ? 
+            calc_vp+vp_half_num_grid
+            :calc_vp-vp_half_num_grid
+        );
+        return func(calc_x_, -calc_vr-1, Axis_vt::num_grid-calc_vt,index_vp);
     }
+
+    //r方向の外側はなにもしなくてよい。Fvx,Fvy,Fvzの定義から、勝手にフラックスが0になるようになっているので。
     template<typename Func>
-    static Value right(Func func,int calc_x_, int calc_vx){
-        return func(calc_x_, calc_vx - Axis_vx::num_grid);
+    static Value right(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp){
+        return 0.;
     }
 };
 
+// vt 
+class BoundaryCondition_vt
+{
+public:
+    static const int label = 2;
+    template<typename Func>
+    static Value left(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp){
+        static_assert(Axis_vp::num_grid%2 == 0,"v_phy空間のグリッド数は偶数である必要がある");
+        constexpr int vp_half_num_grid=Axis_vp::num_grid/2;
+        const int index_vp=(
+            calc_vp < vp_half_num_grid ? 
+            calc_vp+vp_half_num_grid
+            :calc_vp-vp_half_num_grid
+        );
+        return func(calc_x_, calc_vr, -calc_vt-1, index_vp);
+    }
+    template<typename Func>
+    static Value right(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp){
+        static_assert(Axis_vp::num_grid%2 == 0,"v_phy空間のグリッド数は偶数である必要がある");
+        constexpr int vp_half_num_grid=Axis_vp::num_grid/2;
+        const int index_vp=(
+            calc_vp < vp_half_num_grid ? 
+            calc_vp+vp_half_num_grid
+            :calc_vp-vp_half_num_grid
+        );
+        return func(calc_x_, calc_vr, 2*Axis_vt::num_grid-calc_vt-1, index_vp);
+    }
+};
 
+//vp 極座標におけるphy は当然周期境界条件
+
+class BoundaryCondition_vp
+{
+public:
+    static const int label = 3;
+    template<typename Func>
+    static Value left(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp){
+        return func(calc_x_, calc_vr, calc_vt, Axis_vp::num_grid-calc_vp);
+    }
+    template<typename Func>
+    static Value right(Func func,int calc_x_, int calc_vr, int calc_vt, int calc_vp){
+        return func(calc_x_, calc_vr, calc_vt, calc_vp- Axis_vp::num_grid);
+    }
+};
 /*--------------------------------------
  * Pack を用いて境界条件をまとめます。
  *----------------------------------------------*/
 namespace Global{
     BoundaryCondition_x_ boundary_condition_x_;
-    BoundaryCondition_vx boundary_condition_vx;
+    BoundaryCondition_vr boundary_condition_vr;
+    BoundaryCondition_vt boundary_condition_vt;
+    BoundaryCondition_vp boundary_condition_vp;
 
     Pack boundary_condition(
         boundary_condition_x_,
-        boundary_condition_vx
+        boundary_condition_vr,
+        boundary_condition_vt,
+        boundary_condition_vp
     );
 }
 /*----------------------------------------------------------------------------
@@ -287,8 +583,8 @@ namespace Global{
  ****************************************************************************/
 
 namespace Global{
-    Pack operators(physic_x_,physic_vx);
-    Pack advections(flux_x_,flux_vx);
+    Pack operators(physic_x_,physic_vx,physic_vy,physic_vz);
+    Pack advections(flux_x_,flux_vx,flux_vy,flux_vz);
     AdvectionEquation equation(dist_function,operators,advections,jacobian,scheme,boundary_condition,current);
 }
 
@@ -319,13 +615,18 @@ fdtd関連の設定終わり。
 */
 
 /*分布関数の初期化関数の設定*/
-Value fM(Value v_tilde/*無次元量が入る*/){
-    Value U = 0.001;
-    Value sigma = 1;
-    return  Norm::Coef::Ne_tilde * std::exp(-(v_tilde-U)*(v_tilde-U)/(2. * sigma*sigma))
-           / std::sqrt(2. * M_PI)/sigma;
+//温度異方性
+Value fM(Value vx_tilde, Value vy_tilde, Value vz_tilde){
+    const Value A/*v_th_perp^2/v_th_para^2 */ = 1.2;
+    const Value v_thermal_para_pow2 = 1.;
+    const Value v_thermal_perp_pow2 = v_thermal_para_pow2 * A;
+    
+    return  Norm::Coef::Ne_tilde 
+        * std::exp(
+            -vz_tilde*vz_tilde/(2.*v_thermal_para_pow2)
+            -(vx_tilde*vx_tilde+vy_tilde*vy_tilde)/(2.*v_thermal_perp_pow2)
+        )/ std::sqrt(8.*M_PI * M_PI * M_PI)/A;
     //積分して１にならないといけない。
-    //Ne_tilde = int f_tilde dv_tilde^3
 }
 
 void initialize_distribution()
@@ -339,18 +640,26 @@ void initialize_distribution()
         Value eta = uni(rng);  // x 依存ノイズ
         Value base = 1.;
 
-        for(int iv=0; iv<Axis_vx::num_grid; iv++){
-            Value v_tilde = Global::physic_vx.translate(ix,iv);
+        for(int ivr=0; ivr<Axis_vr::num_grid; ivr++){
+            for(int ivt=0; ivt<Axis_vt::num_grid; ivt++){
+                for(int ivp=0; ivp<Axis_vp::num_grid; ivp++){
+                    const Value vx = Global::physic_vx.translate(ix, ivr, ivt, ivp); 
+                    const Value vy = Global::physic_vy.translate(ix, ivr, ivt, ivp); 
+                    const Value vz = Global::physic_vz.translate(ix, ivr, ivt, ivp);
 
-            Global::dist_function.at(ix,iv)
-                = jacobi_det(ix,iv)*fM(v_tilde) * (base + eps * eta);
-                //やこびあんで計算空間にスケールする
+                    Global::dist_function.at(ix,ivr,ivt,ivp)
+                        = jacobi_det(ix,ivr,ivt,ivp)*fM(vx,vy,vz) * (base + eps * eta);
+                        //やこびあんで計算空間にスケールする
+                }
+            }
         }
     }
 
     // ゴーストセル更新（重要）
     Global::boundary_manager.apply<Axis_x_>();
-    Global::boundary_manager.apply<Axis_vx>();
+    Global::boundary_manager.apply<Axis_vr>();
+    Global::boundary_manager.apply<Axis_vt>();
+    Global::boundary_manager.apply<Axis_vp>();
 }
 
 void solve_poisson_1d_periodic() {
@@ -359,8 +668,12 @@ void solve_poisson_1d_periodic() {
     // イオン密度を計算（電子密度の平均値
     Value n_e_tilde_avg = 0.0;
     for(int i=0;i<Axis_x_::num_grid;++i){
-        for(int j=0;j<Axis_vx::num_grid;++j){
-            n_e_tilde_avg += Global::dist_function.at(i,j);
+        for(int j=0;j<Axis_vr::num_grid;++j){
+            for(int k=0;k<Axis_vt::num_grid;++k){
+                for(int l=0;l<Axis_vp::num_grid;++l){
+                    n_e_tilde_avg += Global::dist_function.at(i,j,k,l);
+                }
+            }
         }
     }
     n_e_tilde_avg /= N;
@@ -369,8 +682,12 @@ void solve_poisson_1d_periodic() {
     Global::e_field.at(0).z = 0.0; // 基準値（ポテンシャル自由度）
     for(int i=0;i<Axis_x_::num_grid;i++){
         Value n_e_tilde=0.;
-        for(int j=0;j<Axis_vx::num_grid;++j){
-            n_e_tilde += Global::dist_function.at(i,j);
+        for(int j=0;j<Axis_vr::num_grid;++j){
+            for(int k=0;k<Axis_vt::num_grid;++k){
+                for(int l=0;l<Axis_vp::num_grid;++l){
+                    n_e_tilde += Global::dist_function.at(i,j,k,l);
+                }
+            }
         }
         Global::e_field.at(i+1).z 
             = Global::e_field.at(i).z 
@@ -405,8 +722,12 @@ int main(){
     std::ofstream f_log("f.dat");
     for(int i=0;i<num_steps;i++){
         std::cout<<i<<std::endl;
-        Global::equation.solve<Axis_vx>(dt/2.);
-        Global::boundary_manager.apply<Axis_vx>();
+        Global::equation.solve<Axis_vp>(dt/2.);
+        Global::boundary_manager.apply<Axis_vp>();
+        Global::equation.solve<Axis_vt>(dt/2.);
+        Global::boundary_manager.apply<Axis_vt>();
+        Global::equation.solve<Axis_vr>(dt/2.);
+        Global::boundary_manager.apply<Axis_vr>();
         Global::equation.solve<Axis_x_>(dt/2.);
         Global::boundary_manager.apply<Axis_x_>();
 
@@ -416,24 +737,28 @@ int main(){
 
         Global::equation.solve<Axis_x_>(dt/2.);
         Global::boundary_manager.apply<Axis_x_>();
-        Global::equation.solve<Axis_vx>(dt/2.);
-        Global::boundary_manager.apply<Axis_vx>();
+        Global::equation.solve<Axis_vr>(dt/2.);
+        Global::boundary_manager.apply<Axis_vr>();
+        Global::equation.solve<Axis_vt>(dt/2.);
+        Global::boundary_manager.apply<Axis_vt>();
+        Global::equation.solve<Axis_vp>(dt/2.);
+        Global::boundary_manager.apply<Axis_vp>();
 
         for(int ix=0; ix<Axis_x_::num_grid; ix++){
             ex_log << Global::e_field.at(ix).z << " ";
             Value f = 0.;
-            for(int j=0;j<Axis_vx::num_grid;j++){
-                f += Global::dist_function.at(ix,j)/jacobi_det(ix,j);
-                //やこびあんで物理空間にスケールする
+            for(int j=0;j<Axis_vr::num_grid;j++){
+                for(int k=0;k<Axis_vt::num_grid;++k){
+                    for(int l=0;l<Axis_vp::num_grid;++l){
+                        f += Global::dist_function.at(ix,j,k,l)/jacobi_det(ix,j,k,l);
+                        //やこびあんで物理空間にスケールする
+                    }
+                }
             }
-            if(ix==3522)std::cout<<f<<" "<<std::endl;
-
             f_log << f <<" ";
         }
         ex_log << "\n";
         f_log << "\n";
-
-
     }
     return 0;
 }
