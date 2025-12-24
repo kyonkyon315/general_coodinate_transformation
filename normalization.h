@@ -23,7 +23,7 @@ namespace Param{
 
     //プラズマ周波数
     //static constexpr double omega_pe = std::sqrt(Ne*e*e/(m*epsilon0));
-    static constexpr double omega_pe = 564003.5;
+    static constexpr double omega_pe = 564102.5;
 
     //熱速度
     static constexpr double v_thermal = 0.003 * c;

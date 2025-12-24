@@ -16,8 +16,8 @@ using namespace std;
 //計算空間の軸なので、一律Δx=1であり、軸同士は直交しています。
 //最後の3,3 >はゴーストセルのグリッド数です。
 //物理空間↔計算空間の写像は、全単射である必要があります。
-using Axis_x_ = Axis<0,512,3,3>;
-using Axis_vx = Axis<1,256,3,3>;
+using Axis_x_ = Axis<0,256,3,3>;
+using Axis_vx = Axis<1,512,3,3>;
 
 
 //電子分布関数の型を定義
@@ -62,10 +62,10 @@ namespace Global{
  ***********************************************/
 
 // --- グローバル定数とヘルパー関数の定義 ---
-constexpr Value grid_size_x_ = 0.3 * Norm::Param::debye_length/Norm::Base::x0;
+constexpr Value grid_size_x_ = 0.3 * 3.3 * Norm::Param::debye_length/Norm::Base::x0;
 //0.3 * lambda_D
 
-constexpr Value v_max = 15.* Norm::Param::v_thermal/Norm::Base::v0;
+constexpr Value v_max = 5.* 3.3 * Norm::Param::v_thermal/Norm::Base::v0;
 constexpr Value grid_size_vx = 2. * v_max / Axis_vx::num_grid;
 
 
@@ -175,12 +175,21 @@ public:
     Fvx(){}
 
     Value at(int calc_x_, int calc_vx) const {
-        //Yee格子を採用しているため、電場はｘ方向に、磁場はｔ方向に補間しなければならない。
-        const Value Ex = (Global::e_field.at(calc_x_-1).z
-                        + Global::e_field.at(calc_x_).z)/2.;
-        return -Ex;//電子の電荷が負なので - がつく
-        //return Parameters::Q/Parameters::m * Ex;
-        //規格化したので移流項はExのみ
+        //速度空間の境界でフラックスが0になるように、移流を反対称にする。
+        if (calc_vx == -1){
+            return - at(calc_x_, 0);
+        }
+        else if(calc_vx == Axis_vx::num_grid){
+            return - at(calc_x_, Axis_vx::num_grid-1);
+        }
+        else{
+            //Yee格子を採用しているため、電場はｘ方向に、磁場はｔ方向に補間しなければならない。
+            const Value Ex = (Global::e_field.at(calc_x_-1).z
+                            + Global::e_field.at(calc_x_).z)/2.;
+            return -Ex;//電子の電荷が負なので - がつく
+            //return Parameters::Q/Parameters::m * Ex;
+            //規格化したので移流項はExのみ
+        }
     }
 };
 
@@ -311,54 +320,24 @@ fdtd関連の設定終わり。
 
 /*分布関数の初期化関数の設定*/
 Value fM(Value v_tilde/*無次元量が入る*/){
-    return Norm::Coef::Ne_tilde * std::exp(-(v_tilde)*(v_tilde)/2.)
-           / std::sqrt(2*M_PI)*(grid_size_x_*grid_size_vx);
+    Value U = 0.001;
+    Value sigma = 1;
+    return  Norm::Coef::Ne_tilde * std::exp(-(v_tilde-U)*(v_tilde-U)/(2. * sigma*sigma))
+           / std::sqrt(2. * M_PI)/sigma;
+    //積分して１にならないといけない。
     //Ne_tilde = int f_tilde dv_tilde^3
 }
-/*
-void initialize_distribution()
-{
-    constexpr Value eps = 1e-3;
-    constexpr int k_mode = 1;  // 見たいモード番号（k = 2π k_mode / L）
-
-    const Value Lx =
-        Axis_x_::num_grid * grid_size_x_;
-
-    const Value k =
-        2.0 * M_PI * k_mode / Lx;
-
-    for(int ix = 0; ix < Axis_x_::num_grid; ix++){
-        // 物理座標 x
-        Value x = Global::physic_x_.translate(ix, 0);
-
-        Value mod = 1.0 + eps * std::cos(k * x);
-        //mod = 1.;
-
-        for(int iv = 0; iv < Axis_vx::num_grid; iv++){
-            Value v = Global::physic_vx.translate(ix, iv);
-
-            Global::dist_function.at(ix, iv) =
-                fM(v) * mod;
-        }
-    }
-
-    // ゴーストセル更新（必須）
-    Global::boundary_manager.apply<Axis_x_>();
-    Global::boundary_manager.apply<Axis_vx>();
-}*/
-
 
 void initialize_distribution()
 {
-    constexpr Value eps = 1e-3;
+    constexpr Value eps = 1e-3;//0.001
 
     std::mt19937 rng(12345);
     std::uniform_real_distribution<Value> uni(-1.0,1.0);
 
     for(int ix=0; ix<Axis_x_::num_grid; ix++){
         Value eta = uni(rng);  // x 依存ノイズ
-        Value base = 2.;
-        if(ix>Axis_x_::num_grid/4 && ix<3*Axis_x_::num_grid/4)base = 0.01;
+        Value base = 1.;
 
         for(int iv=0; iv<Axis_vx::num_grid; iv++){
             Value v_tilde = Global::physic_vx.translate(ix,iv);
@@ -413,11 +392,15 @@ void solve_poisson_1d_periodic() {
 int main(){
     initialize_distribution();
     solve_poisson_1d_periodic();
-    Value dt_vlasov  = grid_size_x_ / v_max;
-    Value dt_maxwell = grid_size_x_ / (Norm::Param::c/Norm::Base::v0);
+    //Value dt_vlasov  = grid_size_x_ / v_max;
+    //Value dt_maxwell = grid_size_x_ / (Norm::Param::c/Norm::Base::v0);
+    //Value dt = 0.1 * std::min(dt_vlasov, dt_maxwell);
+    //Value dt = 0.1 * dt_vlasov;
 
-    Value dt = 0.5 * std::min(dt_vlasov, dt_maxwell);
-    int num_steps = 20000;
+
+    //Value dt = 0.1 / Norm::Param::omega_pe/Norm::Base::t0;
+    Value dt = 0.01 ;
+    int num_steps = 100000;
     std::ofstream ex_log("Ex_t.dat");
     std::ofstream f_log("f.dat");
     for(int i=0;i<num_steps;i++){

@@ -1,6 +1,6 @@
 #include <iostream>
 #include <type_traits> // std::is_same_v, std::true_type, std::false_type
-
+#include <cmath>
 // --------------------------------------------------
 // 1. ユーザー定義の A
 // --------------------------------------------------
@@ -92,5 +92,27 @@ int main() {
     std::cout << "U = double を検索... ";
     b3.search<double>(); // 見つからない (SearchHelper の(A)が使われる)
 
+
+    //素電化
+    static constexpr double e = 1.602e-19; //[C]
+
+    //電子質量
+    static constexpr double m = 9.109e-31; //[kg]
+
+    //平均電子密度
+    static constexpr double Ne = 1e8;
+
+    //光速度
+    static constexpr double c = 3e8;
+
+    //誘電率
+    static constexpr double epsilon0 = 8.854e-12; //[F/m]
+
+    //透磁率
+    static constexpr double mu0 = 1./(epsilon0*c*c);
+
+    //プラズマ周波数
+    std::cout<< std::sqrt(Ne*e*e/(m*epsilon0));
+    
     return 0;
 }
