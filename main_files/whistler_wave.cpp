@@ -720,8 +720,10 @@ int main(){
     int num_steps = 100000;
     std::ofstream ex_log("Ex_t.dat");
     std::ofstream f_log("f.dat");
+    Timer timer;
     for(int i=0;i<num_steps;i++){
-        std::cout<<i<<std::endl;
+        std::cout<<i<<" ";
+        timer.start();
         Global::equation.solve<Axis_vp>(dt/2.);
         Global::boundary_manager.apply<Axis_vp>();
         Global::equation.solve<Axis_vt>(dt/2.);
@@ -743,6 +745,9 @@ int main(){
         Global::boundary_manager.apply<Axis_vt>();
         Global::equation.solve<Axis_vp>(dt/2.);
         Global::boundary_manager.apply<Axis_vp>();
+
+        timer.stop();
+        std::cout<<timer<<"\n";
 
         for(int ix=0; ix<Axis_x_::num_grid; ix++){
             ex_log << Global::e_field.at(ix).z << " ";
