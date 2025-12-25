@@ -333,38 +333,6 @@ Value fM(Value v_tilde/*無次元量が入る*/){
            / std::sqrt(2*M_PI)*(grid_size_x_*grid_size_vx)/2.;
     //Ne_tilde = int f_tilde dv_tilde^3
 }
-/*
-void initialize_distribution()
-{
-    constexpr Value eps = 1e-3;
-    constexpr int k_mode = 1;  // 見たいモード番号（k = 2π k_mode / L）
-
-    const Value Lx =
-        Axis_x_::num_grid * grid_size_x_;
-
-    const Value k =
-        2.0 * M_PI * k_mode / Lx;
-
-    for(int ix = 0; ix < Axis_x_::num_grid; ix++){
-        // 物理座標 x
-        Value x = Global::physic_x_.translate(ix, 0);
-
-        Value mod = 1.0 + eps * std::cos(k * x);
-        //mod = 1.;
-
-        for(int iv = 0; iv < Axis_vx::num_grid; iv++){
-            Value v = Global::physic_vx.translate(ix, iv);
-
-            Global::dist_function.at(ix, iv) =
-                fM(v) * mod;
-        }
-    }
-
-    // ゴーストセル更新（必須）
-    Global::boundary_manager.apply<Axis_x_>();
-    Global::boundary_manager.apply<Axis_vx>();
-}*/
-
 
 void initialize_distribution()
 {
@@ -446,6 +414,8 @@ int main(){
     int num_steps = 100000;
     std::ofstream ex_log("Ex_t.dat");
     std::ofstream f_log("f.dat");
+    std::ofstream f_total_log("f_total.dat");
+    std::ofstream j_log("j.dat");
     ProjectedSaver2D projected_saver(
         Global::dist_function,
         Global::physic_x_,
@@ -469,6 +439,7 @@ int main(){
         Global::boundary_manager.apply<Axis_vx>();
         if(i%20 == 0){
             projected_saver.save("../output/two_stream/" + std::to_string(i/20) + ".bin");
+            Value f_total = 0.;
             for(int ix=0; ix<Axis_x_::num_grid; ix++){
                 ex_log << Global::e_field.at(ix).z << " ";
                 Value f = 0.;
@@ -477,11 +448,14 @@ int main(){
                     //やこびあんで物理空間にスケールする
                 }
                 if(ix==3522)std::cout<<f<<" "<<std::endl;
-
+                f_total += f;
                 f_log << f <<" ";
+                j_log << Global::current.at(ix).z <<" ";
             }
             ex_log << "\n";
             f_log << "\n";
+            f_total_log << f_total <<" ";
+            j_log << "\n";
         }
     }
     return 0;
