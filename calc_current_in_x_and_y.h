@@ -3,6 +3,7 @@
 
 #include <tuple>
 #include <utility>
+#include <omp.h>
 
 // 一次元専門
 template<typename Current, typename DistFunction, typename Operators>
@@ -25,14 +26,17 @@ private:
     Current&       current;
     DistFunction& distfunction;
     Operators&    operators;
+    const Value jacob_real; 
 
 public:
-    CalcCurrent_1d(Current& current,
-                   DistFunction& distfunction,
-                   Operators& operators)
-        : current(current),
-          distfunction(distfunction),
-          operators(operators) {}
+    CalcCurrent_1d( Current& current,
+                    DistFunction& distfunction,
+                    Operators& operators,
+                    Value jacob_real):
+            current(current),
+            distfunction(distfunction),
+            operators(operators),
+            jacob_real(jacob_real) {}
 
 private:
     // Depth: 全次元走査
@@ -40,15 +44,15 @@ private:
     // V...  : velocity-space indices
      // ---- velocity recursion ----
     template<int Depth, typename... V>
-    inline void vel_loop(int x, V... v) {
+    inline void vel_loop(int z, V... v) {
         if constexpr (Depth < velo_dim) {
             constexpr int axis = real_dim + Depth;
             for (int i = 0; i < DistFunction::shape[axis]; ++i) {
-                vel_loop<Depth + 1>(x, v..., i);
+                vel_loop<Depth + 1>(z, v..., i);
             }
         } else {
             // ---- leaf ----
-            auto f = distfunction.at(x, v...);
+            auto f = distfunction.at(z, v...);
 
 
             //電流はyee格子により半グリッドずれているので、以下のような実装になる。
@@ -59,26 +63,28 @@ private:
             //  j(i) += v f(i)/2
             //  j(i-1) += v f(i)/2
 
-            //[todo]実空間のやこびあんでスケールしないといけない
-            std::cout<<"[todo]calc_current_in_x_and_y l.63";
-            
-            current.at(x-1).x -=
-                operators.template get_object<1>().translate(x, v...) * f/2.;
-            current.at(x).x -=
-                operators.template get_object<1>().translate(x, v...) * f/2.;
+            current.at(z-1).x -=
+                operators.template get_object<1>().translate(z, v...) * f/2.;
+            current.at(z).x -=
+                operators.template get_object<1>().translate(z, v...) * f/2.;
 
-            current.at(x-1).y -=
-                operators.template get_object<2>().translate(x, v...) * f/2.;
-            current.at(x).y -=
-                operators.template get_object<2>().translate(x, v...) * f/2.;
+            current.at(z-1).y -=
+                operators.template get_object<2>().translate(z, v...) * f/2.;
+            current.at(z).y -=
+                operators.template get_object<2>().translate(z, v...) * f/2.;
         }
     }
 public:
     void calc() {
-        for (int x = 0; x < DistFunction::shape[0]; ++x) {
-            current.at(x).x = 0.0;
-            current.at(x).y = 0.0;
-            vel_loop<0>(x);
+        #pragma omp parallel for
+        for (int z = 0; z < DistFunction::shape[0]; ++z) {
+            current.at(z).x = 0.0;
+            current.at(z).y = 0.0;
+            vel_loop<0>(z);
+            
+            //[todo]実空間のやこびあんでスケールしないといけない
+            current.at(z).x /= jacob_real;
+            current.at(z).y /= jacob_real;
         }
     }
 };
