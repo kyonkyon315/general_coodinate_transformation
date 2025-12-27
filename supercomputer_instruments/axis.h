@@ -1,13 +1,13 @@
 #ifndef AXIS_H
 #define AXIS_H
 
-template<int LABEL,int LENGTH,int NUM_BLOCKS,int L_GHOST=3,int R_GHOST=3>
+template<int LABEL,int LENGTH,int NUM_BLOCKS,int LEN_GHOST=3>
 class Axis {
     public:
     static constexpr int label = LABEL;
     static constexpr int num_grid = LENGTH;
-    static constexpr int L_ghost_length = L_GHOST;
-    static constexpr int R_ghost_length = R_GHOST;
+    static constexpr int L_ghost_length = LEN_GHOST;
+    static constexpr int R_ghost_length = REN_GHOST;
     static constexpr int num_blocks = NUM_BLOCKS;
     const int L_id;
     const int R_id;
