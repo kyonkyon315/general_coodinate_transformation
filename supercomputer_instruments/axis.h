@@ -7,7 +7,7 @@ class Axis {
     static constexpr int label = LABEL;
     static constexpr int num_grid = LENGTH;
     static constexpr int L_ghost_length = LEN_GHOST;
-    static constexpr int R_ghost_length = REN_GHOST;
+    static constexpr int R_ghost_length = LEN_GHOST;
     static constexpr int num_blocks = NUM_BLOCKS;
     const int L_id;
     const int R_id;

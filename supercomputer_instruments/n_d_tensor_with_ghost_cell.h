@@ -1,8 +1,8 @@
 //
 // n_d_tensor_with_ghost_cell.h
 //
-#ifndef N_D_TENSOR_WITH_GHOST_CELL_H
-#define N_D_TENSOR_WITH_GHOST_CELL_H
+#ifndef N_D_TENSOR_WITH_GHOST_CELL_H_super
+#define N_D_TENSOR_WITH_GHOST_CELL_H_super
 
 #include <iostream>
 #include <vector>
@@ -15,6 +15,9 @@
 #include <fstream>
 #include <cstring>
 #include <utility>
+#include <mpi.h>
+#include "block_id2rank.h"
+#include "mpi_sendrecv_bytes.h"
 
 using Index = int;
 
@@ -48,6 +51,16 @@ public:
     // 軸ごとのプラス側ゴーストセル数をコンパイル時に収集
     static constexpr std::array<Index, sizeof...(Axes)> R_ghost_lengths = {Axes::R_ghost_length...};
 
+    static_assert(
+        []()constexpr{
+            for(int i=0;i<N_dim;++i){
+                if(L_ghost_lengths[i]!=R_ghost_lengths[i])return false;
+            }
+            return true;
+        }(),
+        "ghost cell size in L and R mismatch."
+    );
+    
     static constexpr std::array<Index,sizeof...(Axes)> data_shape 
         = [](){
             std::array<Index, sizeof...(Axes)> s = {};
@@ -168,15 +181,158 @@ private:
             }
         }
     }
+/*********************
+ * MPI 関連（始まり）
+ **********************/
+private:
+    std::vector<T> send_buf;
+    std::vector<T> recv_buf;
+    MPI_Comm comm_cart;
+    int my_world_rank;
 
+    template<int TargetDim, bool Is_left, int Dim,typename... Indices>
+    void collect_ghost_cell_helper(std::vector<T>& buf,int &buf_len,Indices... indices){
+        constexpr int Ndim = sizeof...(Axes);
+        if constexpr(Dim == Ndim){
+            buf[buf_len++] = this->at(indices...);
+        }
+        if constexpr(Dim==TargetDim){
+            if constexpr(Is_left){
+                for(int i=0;i<L_ghost_lengths[Dim];i++){
+                    collect_ghost_cell_helper<TargetDim,Is_left,Dim+1>(buf,buf_len,indices...,i);
+                }
+            }
+            else{
+                for(int i = shape[Dim]-R_ghost_lengths[Dim];i++){
+                    collect_ghost_cell_helper<TargetDim,Is_left,Dim+1>(buf,buf_len,indices...,i);
+                }
+            }
+        }
+        else{
+            for(int i=0;i<shape[Dim];i++){
+                collect_ghost_cell_helper<TargetDim,Is_left,Dim+1>(buf,buf_len,indices...,i);
+            }
+        }
+    }
+
+    template<typename TargetAxis, bool Is_left>
+    int collect_ghost_cell(std::vector<T>& buf){
+        //TargetAxis のゴーストセルをsend_bufに格納する。その長さをreturn する。
+        constexpr int TargetDim = TargetAxis::label;
+        int buf_len = 0;
+        collect_ghost_cell_helper<TargetDim,Is_left,0>(buf,buf_len);
+        return buf_len;
+    }
+
+    template<typename TargetAxis, bool Is_left, typename... Idx>
+    static constexpr Index
+    buf_linear_index(Idx... indices)
+    {
+        static_assert(sizeof...(Idx) == sizeof...(Axes));
+
+        constexpr int TargetDim = TargetAxis::label;
+        constexpr int Ndim = sizeof...(Axes);
+
+        constexpr auto shape_buf = [](){
+            std::array<Index, Ndim> s{};
+            for(int d=0; d<Ndim; ++d){
+                if(d == TargetDim)
+                    s[d] = L_ghost_lengths[d];
+                else
+                    s[d] = shape[d];
+            }
+            return s;
+        }();
+
+        constexpr auto strides = [](){
+            std::array<Index, Ndim> st{};
+            Index cur = 1;
+            for(int d=Ndim-1; d>=0; --d){
+                st[d] = cur;
+                cur *= shape_buf[d];
+            }
+            return st;
+        }();
+
+        std::array<Index, Ndim> idx{indices...};
+
+        if constexpr (!Is_left) {
+            idx[TargetDim] -= (shape[TargetDim] - L_ghost_lengths[TargetDim]);
+        }
+
+        Index linear = 0;
+        for(int d=0; d<Ndim; ++d)
+            linear += idx[d] * strides[d];
+
+        return linear;
+    }
+
+    static constexpr Index ghost_size_for_axis(int d)
+    {
+        Index s = L_ghost_lengths[d];
+        for (int k = 0; k < sizeof...(Axes); ++k) {
+            if (k != d)
+                s *= shape[k];
+        }
+        return s;
+    }
+
+    static constexpr Index max_ghost_buffer_size = []() constexpr {
+        Index m = 0;
+        for (int d = 0; d < sizeof...(Axes); ++d) {
+            Index s = ghost_size_for_axis(d);
+            if (s > m) m = s;
+        }
+        return m;
+    }();
+/*********************
+ * MPI 関連（終わり）
+ **********************/
 
 public:
-    NdTensorWithGhostCell(const Axes& ...args){
-        data.resize(total_size);
-    }
     NdTensorWithGhostCell(){
         data.resize(total_size);
+        send_buf.resize(max_ghost_buffer_size);
+        recv_buf.resize(max_ghost_buffer_size);
+        MPI_Comm_rank(MPI_COMM_WORLD,&my_world_rank);
     }
+
+    //ブロックの一方向ゴーストセルごとにデータを交換したい。
+    template<typename TargetAxis,bool Is_left_send,bool Is_left_source>
+    void send_ghosts(
+        int destination_world_rank,
+        int source_world_rank)
+    {
+        int buf_size = collect_ghost_cell<TargtAxis,Is_left_send>();
+
+        int send_tag = 2 * destination_world_rank +(is_left_send ? 1 : 0);
+        int recv_tag = 2 * my_world_rank +(is_left_source ? 1 : 0);
+        mpi_sendrecv_bytes(
+            send_buf,
+            recv_buf,
+            buf_size,
+            destination_world_rank,
+            source_world_rank,
+            send_tag,
+            recv_tag,
+            MPI_COMM_WORLD);
+    }
+
+    template<typename TargetAxis, bool Is_left, typename... Idx>
+    inline T buf_at(Idx... indices) const noexcept
+    {
+        constexpr Index id =
+            buf_linear_index<TargetAxis, Is_left>(indices...);
+
+        return recv_buf[id];
+    }
+    /*
+    外で
+    for i,j,k,l....
+    tensor.at(i,j,-k,l)=tensor.buf_at(i,j,k,l)
+    みたいなかんじで使いたい。
+    */
+    
 
     void add(const NdTensorWithGhostCell& r){
         for(Index i=0;i<total_size;++i){
@@ -271,7 +427,7 @@ public:
         }
 
         // clear all (ghost & physical)
-        std::fill(data.begin(), data.end(), T{0});
+        std::fill(data.begin(), data.end(),T{});
 
         // load only physical region
         auto reader = [&](auto&& self, auto& idxs, size_t depth) -> void {
@@ -313,8 +469,8 @@ template<typename T, typename... Axes>
 auto make_tensor(const Axes&... axes) -> NdTensorWithGhostCell<T, Axes...> {
     return NdTensorWithGhostCell<T, Axes...>(axes...);
 }
+#endif // N_D_TENSOR_WITH_GHOST_CELL_H_super
 
-#endif // N_D_TENSOR_WITH_GHOST_CELL_H
 /*
 
 使用例
@@ -332,15 +488,15 @@ int main(){
         for(int j=0;j<100;++j){
             for(int k=0;k<100;++k){
                 for(int l=0;l<100;++l){
-                    g(i,j,k,l) = (double)i*(double)j*(double)k*(double)l;
+                    g.at(i,j,k,l) = (double)i*(double)j*(double)k*(double)l;
                 }
             }
         }
     }
 
     //また、Axis class の L_ghost_lengthが５に設定されている場合は、
-    g(-3,12,-1,300) = 3.;
-    //などのアクセスが許可されます。
+    g.at(-3,12,-1,300) = 3.;
+    //などの負のインデックスへのアクセスが許可されます。
 
 
     // 3次元テンソル (double型) を作成
