@@ -1,123 +1,148 @@
-//
-// n_d_tensor_with_ghost_cell.h
-//
 #ifndef N_D_TENSOR_WITH_GHOST_CELL_H_super
 #define N_D_TENSOR_WITH_GHOST_CELL_H_super
 
+/***************************************************
+ * 0. Includes / 基本型定義
+ ***************************************************/
 #include <iostream>
 #include <vector>
 #include <array>
 #include <functional>
 #include <omp.h>
 #include <cmath>
-#include <tuple>      // スライス機能のために追加
-#include <type_traits> // スライス機能のために追加
+#include <tuple>
+#include <type_traits>
 #include <fstream>
 #include <cstring>
 #include <utility>
 #include <mpi.h>
+
 #include "block_id2rank.h"
 #include "mpi_sendrecv_bytes.h"
 
 using Index = int;
 
-// --- スライス用ヘルパー型 ---
-
-/**
- * @brief スライス指定: この次元の全物理領域 (:) を対象とすることを示すタグ
- */
+/***************************************************
+ * 1. Slice 型定義（ユーザー API）
+ ***************************************************/
 struct FullSlice {};
 
-/**
- * @brief スライス指定: [START, END) の半開区間を対象とすることを示すタグ
- * (Pythonの [START:END] と同じ)
- */
 template<Index START, Index END>
 struct Slice {
-    static_assert(START <= END, "Slice: START must be less than or equal to END");
+    static_assert(START <= END);
     static constexpr Index START_val = START;
-    static constexpr Index END_val = END;
+    static constexpr Index END_val   = END;
 };
-// --- (ここまで) ---
 
-
-template<typename T,typename... Axes>
+/***************************************************
+ * 2. NdTensorWithGhostCell クラス宣言
+ ***************************************************/
+template<typename T, typename... Axes>
 class NdTensorWithGhostCell {
+
+/***************************************************
+ * 2.1 Compile-time 定数・レイアウト情報
+ ***************************************************/
 public:
-    // 軸ごとの長さをコンパイル時に収集
-    static constexpr std::array<Index, sizeof...(Axes)> shape = {Axes::num_grid...};
-    // 軸ごとのマイナス側ゴーストセル数をコンパイル時に収集
-    static constexpr std::array<Index, sizeof...(Axes)> L_ghost_lengths = {Axes::L_ghost_length...};
-    // 軸ごとのプラス側ゴーストセル数をコンパイル時に収集
-    static constexpr std::array<Index, sizeof...(Axes)> R_ghost_lengths = {Axes::R_ghost_length...};
+    static constexpr int N_dim = sizeof...(Axes);
 
-    static_assert(
-        []()constexpr{
-            for(int i=0;i<N_dim;++i){
-                if(L_ghost_lengths[i]!=R_ghost_lengths[i])return false;
-            }
-            return true;
-        }(),
-        "ghost cell size in L and R mismatch."
-    );
-    
-    static constexpr std::array<Index,sizeof...(Axes)> data_shape 
-        = [](){
-            std::array<Index, sizeof...(Axes)> s = {};
-            for(int i=0;i<(int)sizeof...(Axes);++i){
-                s[i]=shape[i]+L_ghost_lengths[i]+R_ghost_lengths[i];
-            }
-            return s;
-        } ();
+    static constexpr std::array<Index, N_dim> shape = {Axes::num_grid...};
+    static constexpr std::array<Index, N_dim> L_ghost_lengths = {Axes::L_ghost_length...};
+    static constexpr std::array<Index, N_dim> R_ghost_lengths = {Axes::R_ghost_length...};
+
+    static_assert([]() constexpr {
+        for(int i=0;i<N_dim;++i)
+            if(L_ghost_lengths[i]!=R_ghost_lengths[i]) return false;
+        return true;
+    }(), "ghost cell size mismatch");
+    static_assert([]{
+        std::array<int, sizeof...(Axes)> labels = {Axes::label...};
+        for (int i = 0; i < labels.size(); ++i)
+            for (int j = i+1; j < labels.size(); ++j)
+                if (labels[i] == labels[j]) return false;
+        return true;
+    }(), "Axis labels must be unique 二つ以上の軸でlabelが被っています。");
+
+/***************************************************
+ * 2.2 メモリレイアウト（stride / offset）
+ ***************************************************/
 private:
-    // 総要素数をコンパイル時計算
-    static constexpr Index total_size = []() constexpr {
-        Index prod = 1;
-        for (auto s : data_shape) prod *= s;
-        return prod;
-    }();
-
-    std::vector<T> data;
-
-    // ストライドをコンパイル時に計算して配列に格納
-    static constexpr std::array<Index, sizeof...(Axes)> strides = []() constexpr {
-        std::array<Index, sizeof...(Axes)> s = {};
-        Index current_stride = 1;
-        
-        for (int i = (int)sizeof...(Axes) - 1; i >= 0; --i) {
-            s[i] = current_stride;
-            current_stride *= data_shape[i];
-        }
+    static constexpr std::array<Index, N_dim> data_shape = []{
+        std::array<Index,N_dim> s{};
+        for(int i=0;i<N_dim;++i)
+            s[i] = shape[i] + L_ghost_lengths[i] + R_ghost_lengths[i];
         return s;
     }();
 
-    // オフセットをコンパイル時に計算 (物理インデックス(0,0..)が data[] のどこか)
-    static constexpr Index offset = []() constexpr {
-        Index ret_val = 0;
-        for(int i=0;i<sizeof...(Axes);++i){
-            ret_val+= strides[i]*L_ghost_lengths[i];
-        }
-        return ret_val;
+    static constexpr Index total_size = []{
+        Index p=1;
+        for(auto v:data_shape) p*=v;
+        return p;
     }();
 
-    // flatten_index_helper
-    template<size_t I = 0, typename... IdT>
-    constexpr int flatten_index_helper(Index i, IdT... rest) const noexcept {
-        if constexpr (sizeof...(rest) == 0) {
-            return i * strides[I]+offset; 
-        } else {
-            return i * strides[I] + flatten_index_helper<I + 1>(rest...);
+    static constexpr std::array<Index,N_dim> strides = []{
+        std::array<Index,N_dim> st{};
+        Index cur=1;
+        for(int i=N_dim-1;i>=0;--i){
+            st[i]=cur;
+            cur*=data_shape[i];
         }
+        return st;
+    }();
+
+    static constexpr Index offset = []{
+        Index o=0;
+        for(int i=0;i<N_dim;++i)
+            o+=strides[i]*L_ghost_lengths[i];
+        return o;
+    }();
+
+/***************************************************
+ * 2.3 データ本体
+ ***************************************************/
+private:
+    std::vector<T> data;
+
+/***************************************************
+ * 2.4 インデックス計算（flatten）
+ ***************************************************/
+private:
+    template<size_t I=0, typename... Idx>
+    constexpr Index flatten_index_helper(Index i, Idx... rest) const noexcept {
+        if constexpr(sizeof...(rest)==0)
+            return i*strides[I] + offset;
+        else
+            return i*strides[I] + flatten_index_helper<I+1>(rest...);
     }
 
-    // 外部から呼び出す flatten_index
     template<typename... Idx>
-    constexpr int flatten_index(Idx... indices) const noexcept {
-        static_assert(sizeof...(Idx) == sizeof...(Axes));
-        return flatten_index_helper(indices...);
+    constexpr Index flatten_index(Idx... idx) const noexcept {
+        static_assert(sizeof...(Idx)==N_dim);
+        return flatten_index_helper(idx...);
     }
 
+/***************************************************
+ * 2.5 基本アクセス API
+ ***************************************************/
+public:
+    template<typename... Idx>
+    inline T& at(Idx... idx) noexcept {
+        return data[flatten_index(idx...)];
+    }
 
+    template<typename... Idx>
+    inline const T& at(Idx... idx) const noexcept {
+        return data[flatten_index(idx...)];
+    }
+
+/***************************************************
+ * 2.6 set_value / slice 展開ロジック
+ ***************************************************/
+private:
+    // set_value_helper
+    // set_value_sliced_helper
+    // （← 今の実装をそのまま置く）
+    
     // set_value の再帰ヘルパー (物理領域のみ)
     template<typename Func, size_t Depth = 0, typename... Idx>
     void set_value_helper(Func func, Idx... indices) {
@@ -181,88 +206,77 @@ private:
             }
         }
     }
-/*********************
- * MPI 関連（始まり）
- **********************/
+public:
+
+    template<typename Func>
+    void set_value(Func func){
+        set_value_helper(func);
+    }
+
+    /**
+     * @brief 指定したスライス（部分領域）にのみ関数を適用して値を設定する
+     * スライスがゴースト領域を含む場合、そこも対象となる。
+     * スライスが確保されたメモリ領域を超える場合、自動的にクリッピングされる。
+     */
+    template<typename... Slices, typename Func>
+    void set_value_sliced(Func func) {
+        static_assert(sizeof...(Slices) == sizeof...(Axes), 
+            "set_value_sliced: 次元数とスライス型の数が一致しません");
+        
+        set_value_sliced_helper<0,Func, Slices...>(func);
+    }
+
+/***************************************************
+ * 2.7 Ghost cell index / buffer layout（constexpr）
+ ***************************************************/
 private:
-    std::vector<T> send_buf;
-    std::vector<T> recv_buf;
-    MPI_Comm comm_cart;
-    int my_world_rank;
-
-    template<int TargetDim, bool Is_left, int Dim,typename... Indices>
-    void collect_ghost_cell_helper(std::vector<T>& buf,int &buf_len,Indices... indices){
-        constexpr int Ndim = sizeof...(Axes);
-        if constexpr(Dim == Ndim){
-            buf[buf_len++] = this->at(indices...);
+    // buf_linear_index
+    // ghost_size_for_axis
+    // max_ghost_buffer_size
+    template<int TargetDim>
+    static constexpr std::array<Index, N_dim> shape_buf = [](){
+        std::array<Index, N_dim> s{};
+        for(int d=0; d<N_dim; ++d){
+            if(d == TargetDim)
+                s[d] = L_ghost_lengths[d];
+            else
+                s[d] = shape[d];
         }
-        if constexpr(Dim==TargetDim){
-            if constexpr(Is_left){
-                for(int i=0;i<L_ghost_lengths[Dim];i++){
-                    collect_ghost_cell_helper<TargetDim,Is_left,Dim+1>(buf,buf_len,indices...,i);
-                }
-            }
-            else{
-                for(int i = shape[Dim]-R_ghost_lengths[Dim];i++){
-                    collect_ghost_cell_helper<TargetDim,Is_left,Dim+1>(buf,buf_len,indices...,i);
-                }
-            }
+        return s;
+    }();
+    
+    template<int TargetDim>
+    static constexpr std::array<Index, N_dim> strides_buf = [](){
+        std::array<Index, N_dim> st{};
+        Index cur = 1;
+        for(int d=N_dim-1; d>=0; --d){
+            st[d] = cur;
+            cur *= shape_buf<TargetDim>[d];
         }
-        else{
-            for(int i=0;i<shape[Dim];i++){
-                collect_ghost_cell_helper<TargetDim,Is_left,Dim+1>(buf,buf_len,indices...,i);
-            }
-        }
-    }
-
-    template<typename TargetAxis, bool Is_left>
-    int collect_ghost_cell(std::vector<T>& buf){
-        //TargetAxis のゴーストセルをsend_bufに格納する。その長さをreturn する。
-        constexpr int TargetDim = TargetAxis::label;
-        int buf_len = 0;
-        collect_ghost_cell_helper<TargetDim,Is_left,0>(buf,buf_len);
-        return buf_len;
-    }
+        return st;
+    }();
 
     template<typename TargetAxis, bool Is_left, typename... Idx>
     static constexpr Index
     buf_linear_index(Idx... indices)
     {
+        // buf_at は「受信バッファ座標系」で呼ぶ
+        // idx[TargetDim] は
+        //   左: 0..L-1
+        //   右: shape-L..shape-1
         static_assert(sizeof...(Idx) == sizeof...(Axes));
 
         constexpr int TargetDim = TargetAxis::label;
-        constexpr int Ndim = sizeof...(Axes);
+        
+        std::array<Index, N_dim> idx{indices...};
 
-        constexpr auto shape_buf = [](){
-            std::array<Index, Ndim> s{};
-            for(int d=0; d<Ndim; ++d){
-                if(d == TargetDim)
-                    s[d] = L_ghost_lengths[d];
-                else
-                    s[d] = shape[d];
-            }
-            return s;
-        }();
-
-        constexpr auto strides = [](){
-            std::array<Index, Ndim> st{};
-            Index cur = 1;
-            for(int d=Ndim-1; d>=0; --d){
-                st[d] = cur;
-                cur *= shape_buf[d];
-            }
-            return st;
-        }();
-
-        std::array<Index, Ndim> idx{indices...};
-
-        if constexpr (!Is_left) {
-            idx[TargetDim] -= (shape[TargetDim] - L_ghost_lengths[TargetDim]);
+        if constexpr (! Is_left) {
+            idx[TargetDim] -=(shape[TargetDim]-R_ghost_lengths[TargetDim]) ;
         }
 
         Index linear = 0;
-        for(int d=0; d<Ndim; ++d)
-            linear += idx[d] * strides[d];
+        for(int d=0; d<N_dim; ++d)
+            linear += idx[d] * strides_buf<TargetDim>[d];
 
         return linear;
     }
@@ -285,17 +299,57 @@ private:
         }
         return m;
     }();
-/*********************
- * MPI 関連（終わり）
- **********************/
 
-public:
-    NdTensorWithGhostCell(){
-        data.resize(total_size);
-        send_buf.resize(max_ghost_buffer_size);
-        recv_buf.resize(max_ghost_buffer_size);
-        MPI_Comm_rank(MPI_COMM_WORLD,&my_world_rank);
+/***************************************************
+ * 2.8 MPI 通信ロジック
+ ***************************************************/
+private:
+    std::vector<T> send_buf, recv_buf;
+
+    int my_world_rank;
+
+    // collect_ghost_cell_helper
+    // collect_ghost_cell
+    // send_ghosts
+    
+    template<int TargetDim, bool Is_left, int Dim,typename... Indices>
+    void collect_ghost_cell_helper(std::vector<T>& buf,int &buf_len,Indices... indices){
+        constexpr int Ndim = sizeof...(Axes);
+        if constexpr(Dim == Ndim){
+            buf[buf_len++] = this->at(indices...);
+        }
+        else if constexpr(Dim==TargetDim){
+            if constexpr(Is_left){
+                for(int i=0;i<L_ghost_lengths[Dim];i++){
+                    collect_ghost_cell_helper<TargetDim,Is_left,Dim+1>(buf,buf_len,indices...,i);
+                }
+            }
+            else{
+                for(int i = shape[Dim]-R_ghost_lengths[Dim];i<shape[Dim];i++){
+                    collect_ghost_cell_helper<TargetDim,Is_left,Dim+1>(buf,buf_len,indices...,i);
+                }
+            }
+        }
+        else{
+            for(int i=0;i<shape[Dim];i++){
+                collect_ghost_cell_helper<TargetDim,Is_left,Dim+1>(buf,buf_len,indices...,i);
+            }
+        }
     }
+
+    template<typename TargetAxis, bool Is_left>
+    int collect_ghost_cell(std::vector<T>& buf){
+        //TargetAxis のゴーストセルをsend_bufに格納する。その長さをreturn する。
+        constexpr int TargetDim = TargetAxis::label;
+        int buf_len = 0;
+        collect_ghost_cell_helper<TargetDim,Is_left,0>(buf,buf_len);
+        return buf_len;
+    }
+
+/***************************************************
+ * 2.9 公開 Ghost API
+ ***************************************************/
+public:
 
     //ブロックの一方向ゴーストセルごとにデータを交換したい。
     template<typename TargetAxis,bool Is_left_send,bool Is_left_source>
@@ -303,10 +357,10 @@ public:
         int destination_world_rank,
         int source_world_rank)
     {
-        int buf_size = collect_ghost_cell<TargtAxis,Is_left_send>();
+        int buf_size = collect_ghost_cell<TargetAxis,Is_left_send>(send_buf);
 
-        int send_tag = 2 * destination_world_rank +(is_left_send ? 1 : 0);
-        int recv_tag = 2 * my_world_rank +(is_left_source ? 1 : 0);
+        int send_tag = 2 * destination_world_rank +(Is_left_send ? 1 : 0);
+        int recv_tag = 2 * my_world_rank +(Is_left_source ? 1 : 0);
         mpi_sendrecv_bytes(
             send_buf,
             recv_buf,
@@ -318,68 +372,17 @@ public:
             MPI_COMM_WORLD);
     }
 
-    template<typename TargetAxis, bool Is_left, typename... Idx>
-    inline T buf_at(Idx... indices) const noexcept
-    {
-        constexpr Index id =
-            buf_linear_index<TargetAxis, Is_left>(indices...);
-
+    template<typename TargetAxis,bool Is_left, typename... Idx>
+    T buf_at(Idx... idx)const{
+        Index id = buf_linear_index<TargetAxis,Is_left>(idx...);
         return recv_buf[id];
     }
-    /*
-    外で
-    for i,j,k,l....
-    tensor.at(i,j,-k,l)=tensor.buf_at(i,j,k,l)
-    みたいなかんじで使いたい。
-    */
-    
 
-    void add(const NdTensorWithGhostCell& r){
-        for(Index i=0;i<total_size;++i){
-            data[i]+=r.data[i];
-        }
-    }
-    
-    // at() アクセサ
-    template<typename... Idx>
-    inline T& at(Idx... indices) noexcept {
-        static_assert(sizeof...(Idx) == sizeof...(Axes));
-        return data[flatten_index(indices...)];
-    }
-
-    template<typename... Idx>
-    inline const T& at(Idx... indices) const noexcept {
-        static_assert(sizeof...(Idx) == sizeof...(Axes));
-        return data[flatten_index(indices...)];
-    }
-
-    /**
-     * @brief 物理領域全体に関数を適用して値を設定する
-     */
-    template<typename Func>
-    void set_value(Func func){
-        set_value_helper(func);
-    }
-
-    /**
-     * @brief 指定したスライス（部分領域）にのみ関数を適用して値を設定する
-     * スライスがゴースト領域を含む場合、そこも対象となる。
-     * スライスが確保されたメモリ領域を超える場合、自動的にクリッピングされる。
-     */
-    template<typename... Slices, typename Func>
-    void set_value_sliced(Func func) {
-        static_assert(sizeof...(Slices) == sizeof...(Axes), 
-            "set_value_sliced: 次元数とスライス型の数が一致しません");
-        
-        set_value_sliced_helper<0,Func, Slices...>(func);
-    }
-
-    static constexpr int get_dimension(){return sizeof...(Axes);};
-
-    
-
+/***************************************************
+ * 2.10 I/O
+ ***************************************************/
 public:
-
+    
     void save_physical(const std::string& filename) const {
         std::ofstream ofs(filename, std::ios::binary);
         if (!ofs) throw std::runtime_error("Failed to open file for saving");
@@ -447,16 +450,40 @@ public:
         reader(reader, idxs, 0);
     }
 
+/***************************************************
+ * 2.11 ctor / utility
+ ***************************************************/
+public:
+    NdTensorWithGhostCell() {
+        data.resize(total_size,T{});
+        send_buf.resize(max_ghost_buffer_size,T{});
+        recv_buf.resize(max_ghost_buffer_size,T{});
+        MPI_Comm_rank(MPI_COMM_WORLD,&my_world_rank);
+    }
+
+    
+    static constexpr int get_dimension(){return sizeof...(Axes);};
+
+    
+    void add(const NdTensorWithGhostCell& r){
+        for(Index i=0;i<total_size;++i){
+            data[i]+=r.data[i];
+        }
+    }
+    
+    
     void swap(NdTensorWithGhostCell& right) noexcept {
         std::swap(this->data, right.data);
+        std::swap(send_buf, right.send_buf);
+        std::swap(recv_buf, right.recv_buf);
     }
 
     // 非メンバ関数の swap (ADL対応)
     friend void swap(NdTensorWithGhostCell& a, NdTensorWithGhostCell& b) noexcept {
         a.swap(b);
     }
-
 };
+
 
 // クラステンプレート引数の推論補助 (CTAD)
 template <typename T, typename... Axes>
@@ -469,87 +496,5 @@ template<typename T, typename... Axes>
 auto make_tensor(const Axes&... axes) -> NdTensorWithGhostCell<T, Axes...> {
     return NdTensorWithGhostCell<T, Axes...>(axes...);
 }
-#endif // N_D_TENSOR_WITH_GHOST_CELL_H_super
 
-/*
-
-使用例
-#include "axis.h"
-#include "n_d_tensor_with_ghost_cell.h"
-int main(){
-    Axis<0,100> vx,vy,vz;
-    Axis<1,1000> x;
-
-    //Axisクラスをn個入力するとgはn次元テンソルになります。
-    //↓の場合は1000*100*100*100の４次元テンソル
-    auto g = make_tensor_with_ghost_cell<double>(x, vx, vy, vz);
-
-    for(int i=0;i<1000;++i){
-        for(int j=0;j<100;++j){
-            for(int k=0;k<100;++k){
-                for(int l=0;l<100;++l){
-                    g.at(i,j,k,l) = (double)i*(double)j*(double)k*(double)l;
-                }
-            }
-        }
-    }
-
-    //また、Axis class の L_ghost_lengthが５に設定されている場合は、
-    g.at(-3,12,-1,300) = 3.;
-    //などの負のインデックスへのアクセスが許可されます。
-
-
-    // 3次元テンソル (double型) を作成
-    using AxisX = Axis<0, 10, 2, 2>; // 物理: 10 (0..9),  ゴースト: 2 (計 14)
-    using AxisY = Axis<1, 8,  2, 2>; // 物理: 8  (0..7),  ゴースト: 2 (計 12)
-    using AxisZ = Axis<2, 6,  2, 2>; // 物理: 6  (0..5),  ゴースト: 2 (計 10)
-    auto f = make_tensor<double>(AxisX{}, AxisY{}, AxisZ{});
-
-    // 1. set_value (全範囲) を使って、全物理領域を 1.0 で初期化
-    std::cout << "1. 全物理領域 ([0..9], [0..7], [0..5]) を 1.0 で初期化中..." << std::endl;
-    f.set_value([](int i, int j, int k){
-        return 1.0;
-    });
-
-    // 2. set_value_sliced を使って、指定した部分領域の値を 99.0 に上書き
-    // X軸: [3, 6) (つまり 3, 4, 5)
-    // Y軸: 全範囲 (:)
-    // Z軸: [1, 4) (つまり 1, 2, 3)
-    std::cout << "2. スライス ([3..5], :, [1..3]) の値を 99.0 に上書き中..." << std::endl;
-    f.set_value_sliced<
-        Slice<3, 6>,  // X軸スライス
-        FullSlice,    // Y軸スライス
-        Slice<1, 4>   // Z軸スライス
-    >([](int i, int j, int k){
-        // ラムダにはスライスされた物理インデックス (i, j, k) が渡される
-        return 99.0;
-    });
-
-    // 3. ゴースト領域に手動で値を書き込む (境界条件のシミュレート)
-    std::cout << "3. ゴースト領域に手動で値を書き込み中..." << std::endl;
-    f.at(-1, 0, 0) = -1.0; // 左側ゴースト
-    f.at(10, 0, 0) = -1.0; // 右側ゴースト (物理サイズが10なのでインデックス10はゴースト)
-
-
-    // 4. 結果の確認
-    std::cout << "\n--- 結果の確認 ---" << std::endl;
-    std::cout << std::fixed << std::setprecision(1);
-
-    // (A) ゴースト領域の値
-    std::cout << "(A) ゴースト領域の値: f.at(-1, 0, 0) = " << f.at(-1, 0, 0) << " (期待値: -1.0)" << std::endl;
-
-    // (B) set_value で初期化された領域 (スライスの外側)
-    std::cout << "(B) スライスの外側:  f.at(1, 1, 1) = " << f.at(1, 1, 1) << " (期待値: 1.0)" << std::endl;
-    std::cout << "(C) スライスの外側:  f.at(4, 4, 4) = " << f.at(4, 4, 4) << " (期待値: 1.0)" << std::endl;
-
-    // (D) set_value_sliced で上書きされた領域 (スライスの内側)
-    std::cout << "(D) スライスの内側:  f.at(3, 1, 1) = " << f.at(3, 1, 1) << " (期待値: 99.0)" << std::endl;
-    std::cout << "(E) スライスの内側:  f.at(4, 4, 2) = " << f.at(4, 4, 2) << " (期待値: 99.0)" << std::endl;
-    std::cout << "(F) スライスの内側:  f.at(5, 7, 3) = " << f.at(5, 7, 3) << " (期待値: 99.0)" << std::endl;
-    
-    // (G) スライスの境界チェック (X=6 は範囲外 [3, 6) なので 1.0 のまま)
-    std::cout << "(G) スライスの境界外: f.at(6, 1, 1) = " << f.at(6, 1, 1) << " (期待値: 1.0)" << std::endl;
-    
-    return 0;
-}
-*/
+#endif
