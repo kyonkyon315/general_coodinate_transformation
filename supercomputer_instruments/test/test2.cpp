@@ -1,7 +1,7 @@
 #include <mpi.h>
 #include <iostream>
 #include <string>
-#include "../new_n_d_tensor_with_ghost_cell.h"
+#include "../n_d_tensor_with_ghost_cell.h"
 #include "../axis.h"
 
 #include "../axis_instantiator.h"

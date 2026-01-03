@@ -33,7 +33,6 @@ public:
 
         for (int i = ndim-1; i >= 0; --i) {
             if (b[i] < 0 || b[i] >= num_blocks[i]) {
-                std::cout<<"block_id["<<i<<"]="<<b[i]<<"\n";
                 throw std::out_of_range("block_id out of range");
             }
             rank += b[i] * stride;
