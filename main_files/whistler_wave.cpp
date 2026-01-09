@@ -586,7 +586,7 @@ namespace Global{
 namespace Global{
     Pack operators(physic_z_,physic_vx,physic_vy,physic_vz);
     Pack advections(flux_z_,flux_vx,flux_vy,flux_vz);
-    AdvectionEquation equation(dist_function,operators,advections,jacobian,scheme,boundary_condition,current);
+    AdvectionEquation equation(dist_function,advections,jacobian,scheme,boundary_condition,current);
 }
 
 /*
