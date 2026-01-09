@@ -1,3 +1,5 @@
+#ifndef ARG_CHANGER
+#define ARG_CHANGER
 #include <utility>
 #include <cstddef>
 #include <iostream>
@@ -29,3 +31,4 @@ int main() {
     f<2, 5>(myfunc, i,20,i,40);
 }
 */
+#endif //ARG_CHANGER
