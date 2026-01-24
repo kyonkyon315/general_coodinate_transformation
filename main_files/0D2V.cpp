@@ -21,9 +21,12 @@ using DistributionFunction = NdTensorWithGhostCell<Value,Axis_vr,Axis_vt>;
 
 //磁場の型を定義
 using MagneticField = Vec3<Value>;
+//電流計算が不要の時（磁場固定のときなど）はCurrentをNone_currentにしておく
+using Current = None_current;
 
 //グローバル変数としてインスタンス化しておく。
 namespace Global{
+    Current current;
     DistributionFunction dist_function;
     MagneticField m_field;
 }
@@ -289,11 +292,11 @@ namespace Global{
 namespace Global{
     Pack operators(physic_vx,physic_vy);
     Pack advections(flux_vx,flux_vy);
-    AdvectionEquation equation(dist_function,operators,advections,jacobian,scheme,boundary_condition);
+    AdvectionEquation equation(dist_function,operators,advections,jacobian,scheme,boundary_condition,current);
 }
 Value gauss(Value x,Value y){
     Value sigma = 25.;
-    Value m_x = 40.;
+    Value m_x =  0.;
     Value m_y =  0.;
     return std::exp(-((x-m_x)*(x-m_x)+(y-m_y)*(y-m_y))/sigma);
 }
@@ -313,17 +316,14 @@ int main(){
             return gauss(vx,vy);
         }
     );
-    //Global::dist_function.at(20,20)=5.;
-    Value T = 10.;//サイクロトロン周期
-    Global::m_field.z = 2.*M_PI*m/(Q*T);
 
-    Value dt = 0.1* T/Axis_vt::num_grid;//クーラン数 = 0.1になるように調整
+    Value dt = 0.1;
 
-    int num_steps = (int)(10000.*T/dt);//サイクロトロン運動を10000周させる計算
+    int num_steps = 100000;
 
     for(int i=0;i<num_steps;i++){
-        if(i%(num_steps/1000)==0)saver.save("../data/0D2V/"+std::to_string(i/(num_steps/1000))+".bin");
-        if(i%(num_steps/1000)==0)std::cout<<i<<"../data/0D2V/"+std::to_string(i/(num_steps/1000))+".bin"<<std::endl;
+        if(i%(30)==0)saver.save("../data/0D2V/"+std::to_string(i/(30))+".bin");
+        if(i%(30)==0)std::cout<<i<<"../data/0D2V/"+std::to_string(i/(30))+".bin"<<std::endl;
         Global::equation.solve<Axis_vr>(dt/2.);
         Global::boundary_manager.apply<Axis_vr>();
         Global::equation.solve<Axis_vt>(dt);

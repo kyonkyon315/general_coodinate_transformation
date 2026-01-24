@@ -21,11 +21,14 @@ using DistributionFunction = NdTensorWithGhostCell<Value,Axis_vx,Axis_vy>;
 
 //磁場の型を定義
 using MagneticField = Vec3<Value>;
+//電流計算が不要の時（磁場固定のときなど）はCurrentをNone_currentにしておく
+using Current = None_current;
 
 //グローバル変数としてインスタンス化しておく。
 namespace Global{
     DistributionFunction dist_function;
     MagneticField m_field;
+    Current current;
 }
 
 /***********************************************
@@ -36,8 +39,8 @@ namespace Global{
 const Value grid_size_vx = 0.6;
 const Value grid_size_vy = 0.6;
 
-Value vx(int calc_vx){ return grid_size_vx * (double)(calc_vx-Axis_vx::num_grid/2);}
-Value vy(int calc_vy){ return grid_size_vy * (double)(calc_vy-Axis_vy::num_grid/2);}
+Value vx(int calc_vx){ return grid_size_vx * (0.5 + (double)(calc_vx-Axis_vx::num_grid/2));}
+Value vy(int calc_vy){ return grid_size_vy * (0.5 + (double)(calc_vy-Axis_vy::num_grid/2));}
 
 
 
@@ -258,11 +261,11 @@ namespace Global{
 namespace Global{
     Pack operators(physic_vx,physic_vy);
     Pack advections(flux_vx,flux_vy);
-    AdvectionEquation equation(dist_function,operators,advections,jacobian,scheme,boundary_condition);
+    AdvectionEquation equation(dist_function,operators,advections,jacobian,scheme,boundary_condition,current);
 }
 Value gauss(Value x,Value y){
     Value sigma = 25.;
-    Value m_x = 40.;
+    Value m_x = 0.;
     Value m_y =  0.;
     return std::exp(-((x-m_x)*(x-m_x)+(y-m_y)*(y-m_y))/sigma);
 }
@@ -275,7 +278,7 @@ ProjectedSaver2D saver(
 
 int main(){
     Value dt = 0.1;
-    int num_steps = 10000;
+    int num_steps = 100000;
     Global::dist_function.set_value(
         [](int calc_vx,int calc_vy){
             Value vx = Global::physic_vx.translate(calc_vx,calc_vy);

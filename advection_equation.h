@@ -35,8 +35,15 @@ private:
     static constexpr int real_dimension = Current::get_dimension();
     static constexpr int velo_dimension = dimension - real_dimension;
 
+    
+    static constexpr bool need_current = []()constexpr{
+        if constexpr(std::is_same_v<Current,None_current>)return false;
+        return true;
+    }();
+
     static_assert(
         []()constexpr{
+            if(!need_current)return true;
             if(velo_dimension < 0)return false;
             for(int i = 0;i < real_dimension; ++i){
                 if(TargetFunction::shape[i]!=Current::shape[i])return false;
@@ -48,11 +55,6 @@ private:
 
     static constexpr int L = Scheme::used_id_left;
     static constexpr int R = Scheme::used_id_right;
-
-    static constexpr bool need_current = []()constexpr{
-        if constexpr(std::is_same_v<Current,None_current>)return false;
-        return true;
-    }();
 
 
     
