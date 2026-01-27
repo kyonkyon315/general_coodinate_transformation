@@ -206,6 +206,7 @@ private:
             }
         }
     }
+    
 public:
 
     template<typename Func>
@@ -460,11 +461,9 @@ public:
         recv_buf.resize(max_ghost_buffer_size,T{});
         MPI_Comm_rank(MPI_COMM_WORLD,&my_world_rank);
     }
-
     
     static constexpr int get_dimension(){return sizeof...(Axes);};
 
-    
     void add(const NdTensorWithGhostCell& r){
         for(Index i=0;i<total_size;++i){
             data[i]+=r.data[i];

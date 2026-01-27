@@ -29,7 +29,7 @@ int main(int argc, char** argv)
 
     if (size != 6) {
         if (rank == 0)
-            std::cerr << "This test requires exactly 2 MPI ranks\n";
+            std::cerr << "This test requires exactly 6 MPI ranks\n";
         MPI_Finalize();
         return 0;
     }
