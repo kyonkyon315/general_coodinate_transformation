@@ -17,8 +17,8 @@
 
 #include "none.h"
 
-#include "advection_equation.h"
-#include "axis.h"
-#include "n_d_tensor_with_ghost_cell.h"
-#include "n_d_tensor.h"
+#include "supercomputer_instruments/advection_equation.h"
+#include "supercomputer_instruments/axis.h"
+#include "supercomputer_instruments/n_d_tensor_with_ghost_cell.h"
+#include "supercomputer_instruments/n_d_tensor.h"
 
