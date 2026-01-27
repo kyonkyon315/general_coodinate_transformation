@@ -10,6 +10,8 @@ class NdTensor {
 public:
     // 軸ごとの長さをコンパイル時に収集
     static constexpr std::array<int, sizeof...(Axes)> shape = {Axes::num_grid...};
+    std::vector<T> data;
+
 private:
     // 総要素数をコンパイル時計算
     static constexpr int total_size = []() constexpr {
@@ -18,7 +20,6 @@ private:
         return prod;
     }();
 
-    std::vector<T> data;
 
     // (NEW) ストライドをコンパイル時に計算して配列に格納
     // C-style (row-major) のストライド計算
@@ -58,7 +59,7 @@ private:
 
     // set_value の再帰ヘルパー 
     template<typename Func, size_t Dim = 0, typename... Idx>
-    void set_value_helper(Func func, Idx... indices) {
+    void set_value_helper(const Func& func, Idx... indices) {
         
         // 基底ケース: 全ての次元のインデックスが揃った
         if constexpr (Dim == sizeof...(Axes)) {
@@ -97,7 +98,7 @@ public:
     }
 
     template<typename Func>
-    void set_value(Func func){
+    void set_value(const Func& func){
         // ヘルパーを初期呼び出し (インデックスは空)
         set_value_helper(func);
     }
