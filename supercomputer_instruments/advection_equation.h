@@ -18,18 +18,16 @@
 #include "none.h"
 
 using Value = double;
-template<typename TargetFunction,typename Operators,typename Advections,typename Jacobian,typename Scheme,typename BoundaryCondition,typename Current>
+template<typename TargetFunction,typename Advections,typename Jacobian,typename Scheme,typename Current>
 class AdvectionEquation
 {
 private:
     TargetFunction& target_func;
     TargetFunction func_buffer;
     Current& current;
-    const Operators& operators;
     const Advections& advections;
     const Jacobian& jacobian;
     const Scheme& scheme;
-    const BoundaryCondition& boundary_condition;
 
     static constexpr int dimension = TargetFunction::get_dimension();
     static constexpr int real_dimension = Current::get_dimension();
@@ -206,22 +204,17 @@ private:
 public:
     AdvectionEquation(
         TargetFunction& target_func,
-        const Operators& operators,
         const Advections& advections,
         const Jacobian& jacobian,
         const Scheme& scheme,
-        const BoundaryCondition& boundary_condition,
         Current& current
     ):
         target_func(target_func),
-        operators(operators),
         advections(advections),
         jacobian(jacobian),
         scheme(scheme),
-        boundary_condition(boundary_condition),
         current(current)
     {
-        static_assert(target_func.get_dimension()==operators.get_num_objects());
         static_assert(target_func.get_dimension()==advections.get_num_objects());
     }
     template<typename CalcAxis>
