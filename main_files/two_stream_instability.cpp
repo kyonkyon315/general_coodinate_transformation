@@ -333,38 +333,6 @@ Value fM(Value v_tilde/*無次元量が入る*/){
            / std::sqrt(2*M_PI)*(grid_size_x_*grid_size_vx)/2.;
     //Ne_tilde = int f_tilde dv_tilde^3
 }
-/*
-void initialize_distribution()
-{
-    constexpr Value eps = 1e-3;
-    constexpr int k_mode = 1;  // 見たいモード番号（k = 2π k_mode / L）
-
-    const Value Lx =
-        Axis_x_::num_grid * grid_size_x_;
-
-    const Value k =
-        2.0 * M_PI * k_mode / Lx;
-
-    for(int ix = 0; ix < Axis_x_::num_grid; ix++){
-        // 物理座標 x
-        Value x = Global::physic_x_.translate(ix, 0);
-
-        Value mod = 1.0 + eps * std::cos(k * x);
-        //mod = 1.;
-
-        for(int iv = 0; iv < Axis_vx::num_grid; iv++){
-            Value v = Global::physic_vx.translate(ix, iv);
-
-            Global::dist_function.at(ix, iv) =
-                fM(v) * mod;
-        }
-    }
-
-    // ゴーストセル更新（必須）
-    Global::boundary_manager.apply<Axis_x_>();
-    Global::boundary_manager.apply<Axis_vx>();
-}*/
-
 
 void initialize_distribution()
 {
@@ -434,13 +402,7 @@ void solve_poisson_1d_periodic() {
 int main(){
     initialize_distribution();
     solve_poisson_1d_periodic();
-    //Value dt_vlasov  = grid_size_x_ / v_max;
-    //Value dt_maxwell = grid_size_x_ / (Norm::Param::c/Norm::Base::v0);
-    //Value dt = 0.1 * std::min(dt_vlasov, dt_maxwell);
-    //Value dt = 0.1 * dt_vlasov;
-
-
-    //Value dt = 0.1 / Norm::Param::omega_pe/Norm::Base::t0;
+    
     Value dt = 0.01 ;
 
     int num_steps = 100000;

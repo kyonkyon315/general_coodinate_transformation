@@ -1,7 +1,7 @@
 #ifndef FDTD_SOLVER_1D
 #define FDTD_SOLVER_1D
-#include "../parameters.h"
-#include "../normalization.h"
+//#include "../../parameters.h"
+#include "../../normalization.h"
 using Value = double;
 using Index = int;
 //軸の方向はz　一次元直線座標専門のfdtd

@@ -1,8 +1,9 @@
 #include <cmath>
 #include <random>
 
-#include "../include.h"
-
+//#include "../include_super.h"
+//#include "../supercomputer_instruments/axis_instantiator.h"
+int rank;
 
 using Value = double;
 using namespace std;
@@ -16,12 +17,18 @@ using namespace std;
 //計算空間の軸なので、一律Δx=1であり、軸同士は直交しています。
 //最後の3,3 >はゴーストセルのグリッド数です。
 //物理空間↔計算空間の写像は、全単射である必要があります。
+#include "../supercomputer_instruments/axis.h"
 using Axis_x_ = Axis<0,256,3,3>;
-using Axis_vx = Axis<1,512,3,3>;
+using Axis_vx = Axis<1,512,2,3>;
 
+//担当するブロックの各軸の左端インデックス
+//main関数内で設定される。グローバル変数で使うので、ここで定義している。
+int x__start_id;
+int vx_start_id;
 
 //電子分布関数の型を定義
 //先頭に入力する型はテンソルの値の型です。その後に続く軸は、通し番号が小さいものほど左に入力してください。
+#include "../supercomputer_instruments/n_d_tensor_with_ghost_cell.h"
 using DistributionFunction = NdTensorWithGhostCell<Value,Axis_x_,Axis_vx>;
 
 template<typename Element>
@@ -32,6 +39,7 @@ class Pair{
     Element p_half;
 };
 //磁場の型を定義
+#include "../vec3.h"
 using MagneticField = Pair<NdTensorWithGhostCell<Vec3<Value>,Axis_x_>>;
 //B(i,j).p_half=B(x=Δx i,t=Δt(j+1/2))
 
@@ -39,11 +47,16 @@ using MagneticField = Pair<NdTensorWithGhostCell<Vec3<Value>,Axis_x_>>;
 using ElectricField = NdTensorWithGhostCell<Vec3<Value>,Axis_x_>;
 //E(i,j)=E(x=Δx(i+1/2),t=Δt j)
 
+#include "../pack.h"
+using VeloPack = Pack<Axis_vx>;
 //電流の型を定義
-using Current = NdTensorWithGhostCell<Vec3<Value>,Axis_x_>;
-//current.at(i).z = j_z(x=Δx(i+1/2))
+//電流は実空間のみのグリッドを持つので、Axis_vxは与えない。
+//ただし、電流計算用の足し合わせで速度空間の情報が必要なので、Pack<Axis_vx>を与える。
+#include "../supercomputer_instruments/current.h"
+using Current_type = Current<Vec3<Value>,VeloPack,Axis_x_>;
 //current.at(i).x = j_x(x=Δx(i+1/2))
 //current.at(i).y = j_y(x=Δx(i+1/2))
+//current.at(i).z = j_z(x=Δx(i+1/2))
 
 //電流計算が不要の時（磁場固定のときなど）はCurrentをNone_currentにしておく
 //using Current = None_current;
@@ -53,14 +66,13 @@ namespace Global{
     DistributionFunction dist_function;
     ElectricField e_field;
     MagneticField m_field;
-    Current current;
 }
 
 
 /***********************************************
  * 物理空間と計算空間の関係を表す関数を書きます(始)*
  ***********************************************/
-
+#include "../normalization.h"
 // --- グローバル定数とヘルパー関数の定義 ---
 constexpr Value grid_size_x_ = 0.5*3.3;
 //0.3 * lambda_D
@@ -80,10 +92,10 @@ class Physic_x_
 public:
     Physic_x_(){}
     Value honestly_translate(int calc_x,int calc_vx)const{
-        return grid_size_x_*calc_x;
+        return grid_size_x_ * (x__start_id + calc_x);
     }
     Value translate(int calc_x,int calc_vx)const{
-        return grid_size_x_*calc_x;
+        return grid_size_x_ * (x__start_id + calc_x);
     }
     static const int label = 0;
 };
@@ -93,10 +105,10 @@ class Physic_vx
 public:
     Physic_vx(){}
     Value honestly_translate(int calc_x_,int calc_vx)const{
-        return grid_size_vx*(calc_vx - 0.5 * (Value)Axis_vx::num_grid);    
+        return grid_size_vx * ((vx_start_id + calc_vx) - 0.5 * (Value)Axis_vx::num_global_grid);    
     }
     Value translate(int calc_x_,int calc_vx)const{
-        return grid_size_vx*(calc_vx - 0.5 * (Value)Axis_vx::num_grid);    
+        return grid_size_vx * ((vx_start_id + calc_vx) - 0.5 * (Value)Axis_vx::num_global_grid);    
     }
     static const int label = 1;
 };
@@ -129,7 +141,7 @@ public:
         return 1./grid_size_vx;
     }
 };
-
+#include "../independent.h"
 //グローバル変数としてインスタンス化
 namespace Global{
     const Independent independent;
@@ -144,7 +156,7 @@ namespace Global{
  * 具体的には、Jacobian[I,J]には「通し番号Iの計算軸」を「通し番号Jの物理*
  * 軸」で微分したものを入れてください。                               *
  *******************************************************************/
-
+#include "../jacobian.h"
 namespace Global{
 Jacobian jacobian(
     x__diff_x_ , independent, 
@@ -207,7 +219,8 @@ namespace Global{
 /****************************************************************************
  * 次に、Flux計算機を選択します。今回は、Umeda2008を用います。
  ****************************************************************************/
-
+#include "../schemes/umeda_2008_fifth_order.h"
+#include "../schemes/umeda_2008.h"
 //using Scheme = Umeda2008;
 using Scheme = Umeda2008_5;
 namespace Global{
@@ -235,29 +248,69 @@ class BoundaryCondition_x_
 {
 public:
     static const int label = 0;
-    template<typename Func>
-    static Value left(Func func,int calc_x_, int calc_vx){
-        return func(calc_x_ + Axis_x_::num_grid, calc_vx);
-    }
 
-    template<typename Func>
-    static Value right(Func func,int calc_x_, int calc_vx){
-        return func(calc_x_ - Axis_x_::num_grid, calc_vx);
+    //ghost_cell[calc_x,calc_vx] <- cell[calc_x_ + Axis_x_::num_grid,calc_vx] 
+    template<int Index>
+    static int left(int calc_x_, int calc_vx){
+        return 0;
+    }
+    //ghost_cell[calc_x,calc_vx] <- cell[calc_x_ - Axis_x_::num_grid,calc_vx] 
+    template<int Index>
+    static int right(int calc_x_, int calc_vx){
+        return 0;
     }
 };
+
+template<>
+inline int BoundaryCondition_x_::left<0>(const int calc_x_, const int calc_vx){
+    return calc_x_ + Axis_x_::num_grid;
+}
+template<>
+inline int BoundaryCondition_x_::left<1>(const int calc_x_, const int calc_vx){
+    return calc_vx;
+}
+
+template<>
+inline int BoundaryCondition_x_::right<0>(const int calc_x_, const int calc_vx){
+    return calc_x_ - Axis_x_::num_grid;
+}
+template<>
+inline int BoundaryCondition_x_::right<1>(const int calc_x_, const int calc_vx){
+    return calc_vx;
+    }
 class BoundaryCondition_vx
 {
 public:
-static const int label = 1;
-    template<typename Func>
-    static Value left(Func func,int calc_x_, int calc_vx){
-        return func(calc_x_, calc_vx + Axis_vx::num_grid);
+    static const int label = 1;
+    template<int Index>
+    static int left(int calc_x_, int calc_vx){
+        return 0;
     }
-    template<typename Func>
-    static Value right(Func func,int calc_x_, int calc_vx){
-        return func(calc_x_, calc_vx - Axis_vx::num_grid);
+
+    template<int Index>
+    static int right(int calc_x_, int calc_vx){
+        return 0;
     }
 };
+
+
+template<>
+inline int BoundaryCondition_vx::left<0>(const int calc_x_, const int calc_vx){
+    return calc_x_;
+}
+template<>
+inline int BoundaryCondition_vx::left<1>(const int calc_x_, const int calc_vx){
+    return - calc_vx - 1;
+}
+
+template<>
+inline int BoundaryCondition_vx::right<0>(const int calc_x_, const int calc_vx){
+    return calc_x_;
+}
+template<>
+inline int BoundaryCondition_vx::right<1>(const int calc_x_, const int calc_vx){
+    return Axis_vx::num_grid - 1 - (calc_vx - Axis_vx::num_grid);
+}
 
 
 /*--------------------------------------
@@ -276,35 +329,20 @@ namespace Global{
  * ターゲットとなる関数とboundary_conditionを用いてboundary_managerを作成します。
  *---------------------------------------------------------------------------*/
 
-namespace Global{
-    BoundaryManager boundary_manager(dist_function,boundary_condition);
-}
 
 
 /****************************************************************************
  * 最後に、解くべき移流方程式を定義します。
- * 
- *物理演算子はOperatorsに、物理移流項はAdvectionsに、それぞれclass Packを用いてまとめる。
- *ただし、Operatorsの順番とAdvectionsの順番は式の順番と同じにしてください。
  *
- *さらにそれらOperatorsとAdvections、および発展させたい関数（ここではdist_func）を
- *用いてAdvectionEquationをインスタンス化します。これが、本シミュレーションのメインと
- *なるソルバーとして働きます。
+ *Advections、および発展させたい関数（ここではdist_func）を
+ *用いてAdvectionEquationをインスタンス化します。これが、本シミュレーションにおける
+ *ブラソフソルバーとして働きます。
  ****************************************************************************/
-
-namespace Global{
-    Pack operators(physic_x_,physic_vx);
-    Pack advections(flux_x_,flux_vx);
-    AdvectionEquation equation(dist_function,operators,advections,jacobian,scheme,boundary_condition,current);
-}
 
 /*
 fdtd 関連
 */
 
-namespace Global{
-    FDTD_solver_1d fdtd_solver(e_field,m_field,current);
-}
 
 template<typename Field>
 void apply_periodic_1d(Field& f)
@@ -389,10 +427,6 @@ void initialize_distribution()
                 //やこびあんで計算空間にスケールする
         }
     }
-
-    // ゴーストセル更新（重要）
-    Global::boundary_manager.apply<Axis_x_>();
-    Global::boundary_manager.apply<Axis_vx>();
 }
 
 void solve_poisson_1d_periodic() {
@@ -417,6 +451,7 @@ void solve_poisson_1d_periodic() {
         Global::e_field.at(i+1).z 
             = Global::e_field.at(i).z 
             + Norm::Coef::poisson_coef * (n_e_tilde_avg - n_e_tilde)/* *gridsize(=1)*/;
+
     }
     
     // 平均を引いて、周期境界条件を調整
@@ -429,18 +464,43 @@ void solve_poisson_1d_periodic() {
     apply_periodic_1d(Global::e_field);
 }
 
+#include "../supercomputer_instruments/advection_equation.h"
+#include "../supercomputer_instruments/FDTD/fdtd_solver_1d.h"
+#include "../supercomputer_instruments/axis_instantiator.h"
+#include "../supercomputer_instruments/boundary_manager.h"
+#include "../projected_saver_2D.hpp"
 
+int main(int argc, char** argv)
+{
+    MPI_Init(&argc, &argv);
 
-int main(){
+    int world_rank, world_size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+
+    Current_type current;
+    
+    Pack advections(Global::flux_x_,Global::flux_vx);
+    AdvectionEquation equation(Global::dist_function,advections,Global::jacobian,Global::scheme, current);
+    
+    FDTD_solver_1d fdtd_solver(Global::e_field,Global::m_field,current);
+
+    
+    //担当するブロックの各軸の左端インデックスをrankから計算
+    auto [axis_x_, axis_vx] = axis_instantiator<Axis_x_,Axis_vx>(world_rank);
+    x__start_id = axis_x_.L_id;
+    vx_start_id = axis_vx.L_id;
+
+    BoundaryManager boundary_manager(world_rank,world_size,Global::dist_function,Global::boundary_condition,axis_x_,axis_vx);
+
+    //初期化
     initialize_distribution();
+    // 初期化後のゴーストセル更新（重要）
+    boundary_manager.apply<Axis_x_>();
+    boundary_manager.apply<Axis_vx>();
+
     solve_poisson_1d_periodic();
-    //Value dt_vlasov  = grid_size_x_ / v_max;
-    //Value dt_maxwell = grid_size_x_ / (Norm::Param::c/Norm::Base::v0);
-    //Value dt = 0.1 * std::min(dt_vlasov, dt_maxwell);
-    //Value dt = 0.1 * dt_vlasov;
 
-
-    //Value dt = 0.1 / Norm::Param::omega_pe/Norm::Base::t0;
     Value dt = 0.01 ;
 
     int num_steps = 100000;
@@ -450,25 +510,30 @@ int main(){
         Global::dist_function,
         Global::physic_x_,
         Global::physic_vx,
-        Axis_x_{},Axis_vx{});
+        axis_x_,axis_vx);
 
     for(int i=0;i<num_steps;i++){
         std::cout<<i<<std::endl;
-        Global::equation.solve<Axis_vx>(dt/2.);
-        Global::boundary_manager.apply<Axis_vx>();
-        Global::equation.solve<Axis_x_>(dt/2.);
-        Global::boundary_manager.apply<Axis_x_>();
+        equation.solve<Axis_vx>(dt/2.);
+        boundary_manager.apply<Axis_vx>();
+        equation.solve<Axis_x_>(dt/2.);
+        boundary_manager.apply<Axis_x_>();
 
         //Global::current_calculator.calc();
-        Global::fdtd_solver.develop(dt , grid_size_x_);
+        fdtd_solver.develop(dt , grid_size_x_);
         apply_periodic_1d(Global::e_field);
 
-        Global::equation.solve<Axis_x_>(dt/2.);
-        Global::boundary_manager.apply<Axis_x_>();
-        Global::equation.solve<Axis_vx>(dt/2.);
-        Global::boundary_manager.apply<Axis_vx>();
+        equation.solve<Axis_x_>(dt/2.);
+        boundary_manager.apply<Axis_x_>();
+        equation.solve<Axis_vx>(dt/2.);
+        boundary_manager.apply<Axis_vx>();
         if(i%20 == 0){
-            projected_saver.save("../output/two_stream/" + std::to_string(i/20) + ".bin");
+            projected_saver.save("../output/two_stream/rank_" 
+                                    + std::to_string(world_rank) 
+                                    + "__step_" 
+                                    + std::to_string(i/20) 
+                                    + ".bin");
+
             for(int ix=0; ix<Axis_x_::num_grid; ix++){
                 ex_log << Global::e_field.at(ix).z << " ";
                 Value f = 0.;

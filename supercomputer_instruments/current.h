@@ -1,8 +1,8 @@
 #ifndef CURRENT_H
 #define CURRENT_H
 
+
 #include "n_d_tensor.h"
-#include "block_id2rank.h"
 #include "mpi_sendrecv_bytes.h"
 #include <mpi.h>
 #include <vector>
@@ -20,7 +20,7 @@ private:
     static constexpr int VeloDim = VeloPack::get_num_objects();
 
     template<int I>
-    using VeloAxes = typename VeloPack::element<I>;
+    using VeloAxes = typename VeloPack::template element<I>;
 
     template<int Depth>
     static constexpr int calc_velo_block_num_helper(){
@@ -87,6 +87,7 @@ public:
                     + velo_ranks_to_comm[i];
         }
     }    
+    
 
     void compute_global_current(MPI_Comm comm = MPI_COMM_WORLD)
     {
@@ -145,6 +146,7 @@ public:
     }
     static constexpr int get_dimension(){return sizeof...(Axes);};
 
+    static constexpr std::array<int, sizeof...(Axes)> shape = {Axes::num_grid...};
 
 };
 

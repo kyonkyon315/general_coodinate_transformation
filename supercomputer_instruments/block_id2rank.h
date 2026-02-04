@@ -3,7 +3,6 @@
 
 #include <array>
 #include <stdexcept>
-#include <utility>
 
 template<typename... Axes>
 class BlockId2Rank {

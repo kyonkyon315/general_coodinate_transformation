@@ -7,15 +7,15 @@
 #define ALWAYS_INLINE inline
 #endif
 
-#include "independent.h"
-#include "utils/arg_changer.h"
-#include "utils/tuple_head.h"
+#include "../independent.h"
+#include "../utils/arg_changer.h"
+#include "../utils/tuple_head.h"
 #include <type_traits>
-#include <array>
 #include <utility>
-#include <omp.h>
+//#include <omp.h>
 #include <cmath>
-#include "none.h"
+#include "../none.h"
+
 
 using Value = double;
 template<typename TargetFunction,typename Advections,typename Jacobian,typename Scheme,typename Current>
@@ -58,7 +58,7 @@ private:
     template<int I,int Target_Dim,typename... Ints>
     ALWAYS_INLINE
     Value advection_in_calc_space_helper(Ints... indices){
-        using E = typename Jacobian::element_t<Target_Dim,I>;
+        using E = typename Jacobian::template element_t<Target_Dim,I>;
         if constexpr(I==dimension-1){
             if constexpr(std::is_same_v<E, Independent>){
                 //こんなことしなくても最適化で０の項はなくなるかも。
@@ -124,6 +124,7 @@ private:
             //増加分を保存
             func_buffer.at(indices...) = Um-Up;
         }
+
         else if constexpr(Depth==0){
             //[@TODO]Dim==1のときはomp発動しないようにした方がいいかも。
             constexpr int axis_len = TargetFunction::shape[Depth];
@@ -161,20 +162,20 @@ private:
         static constexpr int stencil_offsets[] = { (int(Is) + L)... };
 
         // チェーンルールによる advection 計算
-        Value advection_p_1 = Utility::arg_changer<Target_Dim,1>(
-                            [this](auto... idxs) -> Value{
+        Value advection_p_1 = Utility::arg_changer<Value,Target_Dim,1>(
+                            [this](auto... idxs) -> Value {
                                 return this->advection_in_calc_space<Target_Dim>(idxs...);
                             },
                             indices...
                         );
-        Value advection = Utility::arg_changer<Target_Dim,0>(
-                            [this](auto... idxs) -> Value{
+        Value advection = Utility::arg_changer<Value,Target_Dim,0>(
+                            [this](auto... idxs) -> Value {
                                 return this->advection_in_calc_space<Target_Dim>(idxs...);
                             },
                             indices...
                         );
-        Value advection_m_1 = Utility::arg_changer<Target_Dim,-1>(
-                            [this](auto... idxs) -> Value{
+        Value advection_m_1 = Utility::arg_changer<Value,Target_Dim,-1>(
+                            [this](auto... idxs) -> Value {
                                 return this->advection_in_calc_space<Target_Dim>(idxs...);
                             },
                             indices...
@@ -183,7 +184,7 @@ private:
         Value nyu_m_half = - dt * (advection+advection_m_1)/2.;
         
         this->scheme.calc_U(
-            Utility::arg_changer<Target_Dim, stencil_offsets[Is]>(
+            Utility::arg_changer<Value, Target_Dim, stencil_offsets[Is]>(
                 [this](auto... idxs) -> Value {
                     return this->target_func.at(idxs...);
                 },
@@ -215,7 +216,8 @@ public:
         scheme(scheme),
         current(current)
     {
-        static_assert(target_func.get_dimension()==advections.get_num_objects());
+        static_assert(TargetFunction::get_dimension()==Advections::get_num_objects(),
+                        "target_func の次元数と移流項の数が一致しません");
     }
     template<typename CalcAxis>
     void solve(Value dt){

@@ -165,19 +165,19 @@ private:
         static constexpr int stencil_offsets[] = { (int(Is) + L)... };
 
         // チェーンルールによる advection 計算
-        Value advection_p_1 = Utility::arg_changer<Target_Dim,1>(
+        Value advection_p_1 = Utility::arg_changer<Value,Target_Dim,1>(
                             [this](auto... idxs) -> Value{
                                 return this->advection_in_calc_space<Target_Dim>(idxs...);
                             },
                             indices...
                         );
-        Value advection = Utility::arg_changer<Target_Dim,0>(
+        Value advection = Utility::arg_changer<Value,Target_Dim,0>(
                             [this](auto... idxs) -> Value{
                                 return this->advection_in_calc_space<Target_Dim>(idxs...);
                             },
                             indices...
                         );
-        Value advection_m_1 = Utility::arg_changer<Target_Dim,-1>(
+        Value advection_m_1 = Utility::arg_changer<Value,Target_Dim,-1>(
                             [this](auto... idxs) -> Value{
                                 return this->advection_in_calc_space<Target_Dim>(idxs...);
                             },

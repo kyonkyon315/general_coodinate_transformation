@@ -1,8 +1,6 @@
-#include <iostream>
 #include <vector>
 #include <array>
-#include <functional>
-#include <omp.h>
+//#include <omp.h>
 #include <cmath>
 
 template<typename T,typename... Axes>
@@ -104,9 +102,6 @@ public:
     }
     static constexpr int get_dimension(){return sizeof...(Axes);};
 };
-
-template <typename T, typename... Axes>
-NdTensor(const Axes&...) -> NdTensor<T, Axes...>;
 
 template<typename T, typename... Axes>
 auto make_tensor(const Axes&... axes) -> NdTensor<T, Axes...> {

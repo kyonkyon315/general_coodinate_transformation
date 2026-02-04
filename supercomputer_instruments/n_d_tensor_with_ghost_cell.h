@@ -7,20 +7,18 @@
 #include <iostream>
 #include <vector>
 #include <array>
-#include <functional>
-#include <omp.h>
+//#include <omp.h>
+#include <mpi.h>
 #include <cmath>
 #include <tuple>
 #include <type_traits>
 #include <fstream>
 #include <cstring>
 #include <utility>
-#include <mpi.h>
-
-#include "block_id2rank.h"
 #include "mpi_sendrecv_bytes.h"
 
 using Index = int;
+
 
 /***************************************************
  * 1. Slice 型定義（ユーザー API）
@@ -33,6 +31,7 @@ struct Slice {
     static constexpr Index START_val = START;
     static constexpr Index END_val   = END;
 };
+
 
 /***************************************************
  * 2. NdTensorWithGhostCell クラス宣言
@@ -127,11 +126,13 @@ private:
 public:
     template<typename... Idx>
     inline T& at(Idx... idx) noexcept {
+        static_assert(sizeof...(Idx) == N_dim , "引数の数が次元数と一致しません。");
         return data[flatten_index(idx...)];
     }
 
     template<typename... Idx>
     inline const T& at(Idx... idx) const noexcept {
+        static_assert(sizeof...(Idx) == N_dim , "引数の数が次元数と一致しません。");
         return data[flatten_index(idx...)];
     }
 
@@ -358,6 +359,8 @@ public:
         int destination_world_rank,
         int source_world_rank)
     {
+        std::cout<<"[TODO]:destination_world_rank == my world rankのときに別処理が必要\n"
+                    "supercomputer_instruments/n_d_tensor_with_ghost_cell.h l.362\n";
         int buf_size = collect_ghost_cell<TargetAxis,Is_left_send>(send_buf);
 
         int send_tag = 2 * destination_world_rank +(Is_left_send ? 1 : 0);
@@ -483,10 +486,6 @@ public:
     }
 };
 
-
-// クラステンプレート引数の推論補助 (CTAD)
-template <typename T, typename... Axes>
-NdTensorWithGhostCell(const Axes&...) -> NdTensorWithGhostCell<T, Axes...>;
 
 /**
  * @brief NdTensorWithGhostCell を構築するためのファクトリ関数

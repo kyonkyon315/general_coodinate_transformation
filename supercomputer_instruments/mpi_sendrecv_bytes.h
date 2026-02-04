@@ -15,6 +15,10 @@ void mpi_sendrecv_bytes(const std::vector<T>& send_buf,
     static_assert(std::is_trivially_copyable_v<T>);
     assert(send_buf.size() >= count);
     assert(recv_buf.size() >= count);
+    if(dest == -1){
+        std::cout<<"mpi_sendrecv_bytes rank=-1\n";
+        throw 1;
+    }
     
     MPI_Sendrecv(
         send_buf.data(), count * sizeof(T), MPI_BYTE, dest, send_tag,

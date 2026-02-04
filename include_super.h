@@ -1,10 +1,12 @@
+#ifndef INCLUDE_SUPER_H
+#define INCLUDE_SUPER_H
 #include "vec3.h"
 #include "pack.h"
 
 #include "independent.h"
 #include "jacobian.h"
 #include "schemes/include.h"
-#include "boundary_manager.h"
+#include "supercomputer_instruments/boundary_manager.h"
 #include "utils/Timer.h"
 
 #include "projected_saver_2D.hpp"
@@ -21,4 +23,6 @@
 #include "supercomputer_instruments/axis.h"
 #include "supercomputer_instruments/n_d_tensor_with_ghost_cell.h"
 #include "supercomputer_instruments/n_d_tensor.h"
+
+#endif //INCLUDE_SUPER_H
 
