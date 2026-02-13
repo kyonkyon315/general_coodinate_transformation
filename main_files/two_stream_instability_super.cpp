@@ -1,3 +1,4 @@
+#include "mpi.h"
 #include <cmath>
 #include <random>
 
@@ -18,8 +19,8 @@ using namespace std;
 //最後の3,3 >はゴーストセルのグリッド数です。
 //物理空間↔計算空間の写像は、全単射である必要があります。
 #include "../supercomputer_instruments/axis.h"
-using Axis_x_ = Axis<0,256,3,3>;
-using Axis_vx = Axis<1,512,2,3>;
+using Axis_x_ = Axis<0,256/4,4,3>;
+using Axis_vx = Axis<1,512/2,2,3>;
 
 //担当するブロックの各軸の左端インデックス
 //main関数内で設定される。グローバル変数で使うので、ここで定義している。
@@ -241,6 +242,7 @@ namespace Global{
  * f(x_length+x,v) ← f(x_length-x,-v)
  * 
  * Axes と同様、labelを付けます。
+ * ここではグローバルインデックスで記述してください。
  * 
  ****************************************************************************/
 //xは周期境界条件
@@ -248,6 +250,9 @@ class BoundaryCondition_x_
 {
 public:
     static const int label = 0;
+
+    //吸収項などを実装するとき、ゴーストセルにほかのセルの値を代入するだけではなくなる。このときtrueにする。->その場合の動作は未定義
+    static constexpr bool not_only_comm = false;
 
     //ghost_cell[calc_x,calc_vx] <- cell[calc_x_ + Axis_x_::num_grid,calc_vx] 
     template<int Index>
@@ -263,7 +268,7 @@ public:
 
 template<>
 inline int BoundaryCondition_x_::left<0>(const int calc_x_, const int calc_vx){
-    return calc_x_ + Axis_x_::num_grid;
+    return calc_x_ + Axis_x_::num_global_grid;
 }
 template<>
 inline int BoundaryCondition_x_::left<1>(const int calc_x_, const int calc_vx){
@@ -272,7 +277,7 @@ inline int BoundaryCondition_x_::left<1>(const int calc_x_, const int calc_vx){
 
 template<>
 inline int BoundaryCondition_x_::right<0>(const int calc_x_, const int calc_vx){
-    return calc_x_ - Axis_x_::num_grid;
+    return calc_x_ - Axis_x_::num_global_grid;
 }
 template<>
 inline int BoundaryCondition_x_::right<1>(const int calc_x_, const int calc_vx){
@@ -282,6 +287,8 @@ class BoundaryCondition_vx
 {
 public:
     static const int label = 1;
+    static constexpr bool not_only_comm = false;
+
     template<int Index>
     static int left(int calc_x_, int calc_vx){
         return 0;
@@ -309,13 +316,14 @@ inline int BoundaryCondition_vx::right<0>(const int calc_x_, const int calc_vx){
 }
 template<>
 inline int BoundaryCondition_vx::right<1>(const int calc_x_, const int calc_vx){
-    return Axis_vx::num_grid - 1 - (calc_vx - Axis_vx::num_grid);
+    return Axis_vx::num_global_grid - 1 - (calc_vx - Axis_vx::num_global_grid);
 }
 
 
 /*--------------------------------------
  * Pack を用いて境界条件をまとめます。
  *----------------------------------------------*/
+using BoundaryCondition = Pack<BoundaryCondition_x_, BoundaryCondition_vx>;
 namespace Global{
     BoundaryCondition_x_ boundary_condition_x_;
     BoundaryCondition_vx boundary_condition_vx;
@@ -371,43 +379,10 @@ Value fM(Value v_tilde/*無次元量が入る*/){
            / std::sqrt(2*M_PI)*(grid_size_x_*grid_size_vx)/2.;
     //Ne_tilde = int f_tilde dv_tilde^3
 }
-/*
-void initialize_distribution()
-{
-    constexpr Value eps = 1e-3;
-    constexpr int k_mode = 1;  // 見たいモード番号（k = 2π k_mode / L）
-
-    const Value Lx =
-        Axis_x_::num_grid * grid_size_x_;
-
-    const Value k =
-        2.0 * M_PI * k_mode / Lx;
-
-    for(int ix = 0; ix < Axis_x_::num_grid; ix++){
-        // 物理座標 x
-        Value x = Global::physic_x_.translate(ix, 0);
-
-        Value mod = 1.0 + eps * std::cos(k * x);
-        //mod = 1.;
-
-        for(int iv = 0; iv < Axis_vx::num_grid; iv++){
-            Value v = Global::physic_vx.translate(ix, iv);
-
-            Global::dist_function.at(ix, iv) =
-                fM(v) * mod;
-        }
-    }
-
-    // ゴーストセル更新（必須）
-    Global::boundary_manager.apply<Axis_x_>();
-    Global::boundary_manager.apply<Axis_vx>();
-}*/
 
 
 void initialize_distribution()
 {
-    std::cout<<"hello";
-    std::cout<<"hello";
     constexpr Value eps = 1e-3;
 
     std::mt19937 rng(12345);
@@ -439,7 +414,7 @@ void solve_poisson_1d_periodic() {
             n_e_tilde_avg += Global::dist_function.at(i,j);
         }
     }
-    n_e_tilde_avg /= N;
+    n_e_tilde_avg /= (Value)N;
 
     // 電場の積分
     Global::e_field.at(0).z = 0.0; // 基準値（ポテンシャル自由度）
@@ -469,6 +444,9 @@ void solve_poisson_1d_periodic() {
 #include "../supercomputer_instruments/axis_instantiator.h"
 #include "../supercomputer_instruments/boundary_manager.h"
 #include "../projected_saver_2D.hpp"
+#include "../supercomputer_instruments/comm_path_generator.h"
+#include "../supercomputer_instruments/comm_graph_constructor.h"
+#include "../utils/Timer.h"
 
 int main(int argc, char** argv)
 {
@@ -478,13 +456,63 @@ int main(int argc, char** argv)
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
-    Current_type current;
+    Global::dist_function.comm_init(world_rank);
+    Global::e_field.comm_init(world_rank);
+    Global::m_field.m_half.comm_init(world_rank);
+    Global::m_field.p_half.comm_init(world_rank);
+
+    //if(world_rank == 2){
+    //if(true){
+        CommPathGenerator<BoundaryCondition, Axis_x_, Axis_vx> gen(world_size);
+        auto x1 = gen.get_comm_path<Axis_x_>();
+
+        auto ring_and_linear1 = buildRingsAndLinears(x1);
+
+        auto rings1 = ring_and_linear1.first;
+        auto linears1 = ring_and_linear1.second;
+
+            
+        std::cout << "=== Rings ===\n";
+        for (auto& r : rings1) {
+            std::cout << "Ring: ";
+            for (int n : r.nodes) std::cout << n << " ";
+            std::cout << "\n";
+        }
+
+        std::cout << "=== Linears ===\n";
+        for (auto& l : linears1) {
+            std::cout << "Linear: ";
+            for (int n : l.nodes) std::cout << n << " ";
+            std::cout << "\n";
+        }
+
+        auto x2 = gen.get_comm_path<Axis_vx>();
+        auto ring_and_linear2 = buildRingsAndLinears(x2);
+
+        auto rings2 = ring_and_linear2.first;
+        auto linears2 = ring_and_linear2.second;
+
+            
+        std::cout << "=== Rings ===\n";
+        for (auto& r : rings2) {
+            std::cout << "Ring: ";
+            for (int n : r.nodes) std::cout << n << " ";
+            std::cout << "\n";
+        }
+
+        std::cout << "=== Linears ===\n";
+        for (auto& l : linears2) {
+            std::cout << "Linear: ";
+            for (int n : l.nodes) std::cout << n << " ";
+            std::cout << "\n";
+        }
+    
+    Current_type current(world_rank);
     
     Pack advections(Global::flux_x_,Global::flux_vx);
     AdvectionEquation equation(Global::dist_function,advections,Global::jacobian,Global::scheme, current);
     
     FDTD_solver_1d fdtd_solver(Global::e_field,Global::m_field,current);
-
     
     //担当するブロックの各軸の左端インデックスをrankから計算
     auto [axis_x_, axis_vx] = axis_instantiator<Axis_x_,Axis_vx>(world_rank);
@@ -492,18 +520,20 @@ int main(int argc, char** argv)
     vx_start_id = axis_vx.L_id;
 
     BoundaryManager boundary_manager(world_rank,world_size,Global::dist_function,Global::boundary_condition,axis_x_,axis_vx);
-
+    //}
     //初期化
     initialize_distribution();
     // 初期化後のゴーストセル更新（重要）
     boundary_manager.apply<Axis_x_>();
+    std::cout<<"boundary_manager.apply<Axis_x_>();\n\n\n"<<std::flush;
     boundary_manager.apply<Axis_vx>();
+    std::cout<<"boundary_manager.apply<Axis_vx>();\n\n\n"<<std::flush;
 
     solve_poisson_1d_periodic();
 
     Value dt = 0.01 ;
 
-    int num_steps = 100000;
+    int num_steps = 100;
     std::ofstream ex_log("Ex_t.dat");
     std::ofstream f_log("f.dat");
     ProjectedSaver2D projected_saver(
@@ -511,23 +541,25 @@ int main(int argc, char** argv)
         Global::physic_x_,
         Global::physic_vx,
         axis_x_,axis_vx);
-
+    Timer timer;
+    timer.start();
     for(int i=0;i<num_steps;i++){
-        std::cout<<i<<std::endl;
+        if(world_rank==0)std::cout<<i<<std::endl;
         equation.solve<Axis_vx>(dt/2.);
-        boundary_manager.apply<Axis_vx>();
+        //boundary_manager.apply<Axis_vx>();
         equation.solve<Axis_x_>(dt/2.);
-        boundary_manager.apply<Axis_x_>();
+        //boundary_manager.apply<Axis_x_>();
 
         //Global::current_calculator.calc();
         fdtd_solver.develop(dt , grid_size_x_);
         apply_periodic_1d(Global::e_field);
 
         equation.solve<Axis_x_>(dt/2.);
-        boundary_manager.apply<Axis_x_>();
+        //boundary_manager.apply<Axis_x_>();
         equation.solve<Axis_vx>(dt/2.);
-        boundary_manager.apply<Axis_vx>();
-        if(i%20 == 0){
+        //boundary_manager.apply<Axis_vx>();
+        //if(i%20 == 0){
+        if(false){
             projected_saver.save("../output/two_stream/rank_" 
                                     + std::to_string(world_rank) 
                                     + "__step_" 
@@ -549,5 +581,8 @@ int main(int argc, char** argv)
             f_log << "\n";
         }
     }
+    timer.stop();
+    if(world_rank==0)std::cout<<timer<<"\n";
+    MPI_Finalize();
     return 0;
 }

@@ -176,7 +176,8 @@ private:
 
             if constexpr (std::is_same_v<CurrentSlice, FullSlice>) {
                 // (A) FullSlice の場合: 物理領域 [0, shape[Dim]) をループ
-                for (int i = min_bound; i < max_bound; ++i) {
+                //for (int i = min_bound; i < max_bound; ++i) {
+                for (int i = 0; i < shape[Depth]; ++i) {
                     set_value_sliced_helper<Depth+1,Func, Slices...>(func, indices..., i);
                 }
             } 
@@ -355,13 +356,14 @@ public:
 
     //ブロックの一方向ゴーストセルごとにデータを交換したい。
     template<typename TargetAxis,bool Is_left_send,bool Is_left_source>
-    void send_ghosts(
+    void send_and_recv_ghosts(
         int destination_world_rank,
         int source_world_rank)
     {
-        std::cout<<"[TODO]:destination_world_rank == my world rankのときに別処理が必要\n"
-                    "supercomputer_instruments/n_d_tensor_with_ghost_cell.h l.362\n";
-        int buf_size = collect_ghost_cell<TargetAxis,Is_left_send>(send_buf);
+        //destination_world_rank==-1 のときは送信しない
+        //source_world_rank==-1 のときは受信しない
+                    
+        int buf_size = (destination_world_rank==-1 ? -1: collect_ghost_cell<TargetAxis,Is_left_send>(send_buf));
 
         int send_tag = 2 * destination_world_rank +(Is_left_send ? 1 : 0);
         int recv_tag = 2 * my_world_rank +(Is_left_source ? 1 : 0);
@@ -458,12 +460,14 @@ public:
  * 2.11 ctor / utility
  ***************************************************/
 public:
-    NdTensorWithGhostCell() {
+    NdTensorWithGhostCell()
+    {
         data.resize(total_size,T{});
         send_buf.resize(max_ghost_buffer_size,T{});
         recv_buf.resize(max_ghost_buffer_size,T{});
-        MPI_Comm_rank(MPI_COMM_WORLD,&my_world_rank);
     }
+
+    void comm_init(int world_rank_){my_world_rank = world_rank_;}
     
     static constexpr int get_dimension(){return sizeof...(Axes);};
 

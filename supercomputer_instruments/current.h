@@ -61,8 +61,9 @@ private:
     }();
 
 public:
-    Current(){
-        MPI_Comm_rank(MPI_COMM_WORLD, &my_world_rank);
+    Current(int my_world_rank):
+        my_world_rank(my_world_rank)
+    {
         ranks_to_com.resize(log_velo_block_num);
 
         std::vector<int> velo_ranks_to_comm(log_velo_block_num);

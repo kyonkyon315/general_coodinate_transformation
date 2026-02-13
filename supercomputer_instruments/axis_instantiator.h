@@ -5,7 +5,6 @@
 #include <array>
 #include <utility>
 #include <stdexcept>
-#include <iostream>
 using Index = int;
 
 namespace detail {

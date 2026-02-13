@@ -15,6 +15,7 @@
 //#include <omp.h>
 #include <cmath>
 #include "../none.h"
+#include <iostream>
 
 
 using Value = double;
@@ -216,7 +217,7 @@ public:
         scheme(scheme),
         current(current)
     {
-        static_assert(TargetFunction::get_dimension()==Advections::get_num_objects(),
+        static_assert(TargetFunction::get_dimension() == Advections::get_num_objects(),
                         "target_func の次元数と移流項の数が一致しません");
     }
     template<typename CalcAxis>

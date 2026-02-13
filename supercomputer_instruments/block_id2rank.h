@@ -3,6 +3,7 @@
 
 #include <array>
 #include <stdexcept>
+#include <iostream>
 
 template<typename... Axes>
 class BlockId2Rank {
@@ -32,6 +33,11 @@ public:
 
         for (int i = ndim-1; i >= 0; --i) {
             if (b[i] < 0 || b[i] >= num_blocks[i]) {
+                std::cout<<"[";
+                for(int j=0;j<b.size();j++){
+                    std::cout<<b[i]<<" ";
+                }
+                std::cout<<"] "<<std::flush;
                 throw std::out_of_range("block_id out of range");
             }
             rank += b[i] * stride;
