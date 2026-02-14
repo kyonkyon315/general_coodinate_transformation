@@ -4,6 +4,7 @@
 /***************************************************
  * 0. Includes / 基本型定義
  ***************************************************/
+#include <cstddef>
 #include <iostream>
 #include <vector>
 #include <array>
@@ -349,6 +350,18 @@ private:
         return buf_len;
     }
 
+    std::vector<int> comm_ghost_buf_sizes; 
+
+    template<int I=0>
+    void init_comm_ghost_buf_sizes(){
+        if constexpr(I==N_dim)return;
+        else{
+            if(I==0)comm_ghost_buf_sizes.resize(N_dim);
+            comm_ghost_buf_sizes[I] = collect_ghost_cell<std::tuple_element_t<I, std::tuple<Axes...>>,true>(send_buf);
+            init_comm_ghost_buf_sizes<I+1>();
+        }
+    }
+
 /***************************************************
  * 2.9 公開 Ghost API
  ***************************************************/
@@ -362,8 +375,9 @@ public:
     {
         //destination_world_rank==-1 のときは送信しない
         //source_world_rank==-1 のときは受信しない
+        if(destination_world_rank != -1)collect_ghost_cell<TargetAxis,Is_left_send>(send_buf);
                     
-        int buf_size = (destination_world_rank==-1 ? -1: collect_ghost_cell<TargetAxis,Is_left_send>(send_buf));
+        int buf_size = comm_ghost_buf_sizes[TargetAxis::label];
 
         int send_tag = 2 * destination_world_rank +(Is_left_send ? 1 : 0);
         int recv_tag = 2 * my_world_rank +(Is_left_source ? 1 : 0);
@@ -465,6 +479,8 @@ public:
         data.resize(total_size,T{});
         send_buf.resize(max_ghost_buffer_size,T{});
         recv_buf.resize(max_ghost_buffer_size,T{});
+
+        init_comm_ghost_buf_sizes();
     }
 
     void comm_init(int world_rank_){my_world_rank = world_rank_;}

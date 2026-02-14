@@ -452,7 +452,7 @@ private:
             auto[dst_rank,is_my_left,is_dst_left] = send_info;
             this->template send_and_recv_ghosts<TargetAxis>(dst_rank,-1,is_my_left,false);
         }
-        else if(send_info_opt.has_value()&&recv_info_opt.has_value()){
+        else if(!send_info_opt.has_value()&&recv_info_opt.has_value()){
             auto recv_info = recv_info_opt.value();
             auto[src_rank,is_src_left,is_my_left_] = recv_info;
             this->template send_and_recv_ghosts<TargetAxis>(-1,src_rank,false,is_src_left);
@@ -522,7 +522,7 @@ public:
     {
         init_comm();
         for(int i=0;i<comm_info_tichets.size();i++){
-            std::cout<<"Axis["<<i<<"]:\n"<<comm_info_tichets[i]<<"\n";
+            //std::cout<<"Axis["<<i<<"]:\n"<<comm_info_tichets[i]<<"\n";
         }
     }
     //Pack<BoundaryCondition_x_,BoundaryCondition_vr,BoundaryCondition_vt,BoundaryCondition_vp>::element<1>::left(hoge,1,2,3,4);
