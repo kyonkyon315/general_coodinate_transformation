@@ -360,9 +360,6 @@ private:
             target_func.template set_value_sliced<std::conditional_t<Idx == target_dim, TargetSlice, FullSlice>...>(
                 [&]<typename ...Ints>(Ints ...indices)->Value {
                     if constexpr(Is_my_left){
-                        /*std::cout<<"map self true ";
-                        ((std::cout << indices << " "), ...);
-                        std::cout << "\n"<<std::endl;*/
 
                         auto idx_tuple = std::tuple{indices...};
 
@@ -388,9 +385,6 @@ private:
                         }(std::make_index_sequence<sizeof...(Ints)>{});
                     }
                     else{
-                        //std::cout<<"map self false ";
-                        //((std::cout << indices << " "), ...);
-                        //std::cout << "\n"<<std::endl;
 
                         auto idx_tuple = std::tuple{indices...};
 
@@ -421,7 +415,7 @@ private:
     }
 
     template<Axis_T TargetAxis>
-    void apply_helper(bool is_forward){
+    void apply_helper(const bool is_forward){
         constexpr int target_dim = TargetAxis::label;
         constexpr int num_ghost_grid = TargetAxis::L_ghost_length;//=R_ghost_length
         const int block_id  = std::get<target_dim>(axes_tuple).block_id;
@@ -457,32 +451,22 @@ private:
             auto[src_rank,is_src_left,is_my_left_] = recv_info;
             this->template send_and_recv_ghosts<TargetAxis>(-1,src_rank,false,is_src_left);
         }
-        else{
-        }
+        else{}//なにもしない
 
         //通信した内容をゴーストセルに埋め込む
         if(recv_info_opt.has_value()){
             if(recv_info_opt.value().is_my_left && block_id >= 1){
                 //物理的には内部
-                /*
-                template<Axis_T TargetAxis,bool Is_src_left,bool Is_my_left>
-                void ghost_mapping_comm_inner(){*/
-                //assert(!recv_info_opt.value().is_src_left);
-                //std::cout<<"\n\nghost_mapping_comm_inner\n\n"<<std::flush;
-                //return;
                 ghost_mapping_comm_inner<TargetAxis, false, true>();
             }
             else if(!recv_info_opt.value().is_my_left && block_id < TargetAxis::num_blocks-1){
                 //物理的には内部
-                //assert(recv_info_opt.value().is_src_left);
-                //std::cout<<"\n\nghost_mapping_comm_inner\n\n"<<std::flush;
-                //return;
                 ghost_mapping_comm_inner<TargetAxis, true, false>();
             }
             else{
                 auto recv_info = recv_info_opt.value();
                 auto[src_rank, is_src_left,is_my_left] = recv_info;
-                //std::cout<<"\n\nghost_mapping_comm_edge\n\n"<<std::flush;
+
                 if(is_src_left && is_my_left) ghost_mapping_comm_edge<TargetAxis, true, true>(src_rank);
                 if(is_src_left && !is_my_left) ghost_mapping_comm_edge<TargetAxis, true, false>(src_rank);
                 if(!is_src_left && is_my_left) ghost_mapping_comm_edge<TargetAxis, false, true>(src_rank);
@@ -491,7 +475,6 @@ private:
         }
         //自分自身のランクで完結するゴーストセルの更新を行う。
         else{
-            //std::cout<<"\n\nghost_mapping_self\n\n"<<std::flush;
             if(send_info_opt.has_value()){
                 auto send_info = send_info_opt.value();
                 bool is_target_left = !send_info.is_my_left;//受け取る側の左右はsend_info.is_my_leftの逆
@@ -499,7 +482,7 @@ private:
                     ghost_mapping_self<TargetAxis, true>();}
                 else{
                     ghost_mapping_self<TargetAxis, false>();}
-            }//ok
+            }
             else{//ブロック分割していない場合
                 //forward の時右側
                 //backward の時左側
@@ -525,7 +508,6 @@ public:
             //std::cout<<"Axis["<<i<<"]:\n"<<comm_info_tichets[i]<<"\n";
         }
     }
-    //Pack<BoundaryCondition_x_,BoundaryCondition_vr,BoundaryCondition_vt,BoundaryCondition_vp>::element<1>::left(hoge,1,2,3,4);
     
     template<typename TargetAxis>
     void apply(){

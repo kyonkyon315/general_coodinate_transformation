@@ -25,9 +25,7 @@ private:
             return std::array<int, DIM>{
                 (Axes::label == TargetDim
                     ? axes.L_id - 1   // ghost
-                    //? - 1   // ghost
                     : axes.L_id      // interior
-                    //: 0      // interior
                 )...
             };
         }
@@ -35,9 +33,7 @@ private:
             return std::array<int, DIM>{
                 (Axes::label == TargetDim
                     ? axes.R_id      // ghost
-                    //? axes.num_grid      // ghost
                     : axes.L_id      // interior
-                    //: 0      // interior
                 )...
             };
         }
@@ -50,26 +46,63 @@ private:
         const std::array<int, DIM> idx = make_ghost_indices<Is_tgt_left,TargetDim>(axes...);
         using TargetAxis = std::tuple_element_t<TargetDim, std::tuple<Axes...>>;
 
-        if constexpr(Is_tgt_left){
-            std::array<int,DIM> src_indices={BoundaryElement<TargetDim>::template left<Axes::label>(idx[Axes::label]...)...};
-            /*
-            std::cout<<"src_indices:[";
-            for(int i : src_indices){
-                std::cout<<i<<" ";
+        constexpr int BC_Dim = BoundaryCondition::get_num_objects();
+        static_assert(BC_Dim <= DIM,"BoundaryCondition の要素数 <= Axesの数 である必要があります。" );
+        //if constexpr(BC_Dim == DIM){
+        if constexpr(false){
+            if constexpr(Is_tgt_left){
+                std::array<int,DIM> src_indices={BoundaryElement<TargetDim>::template left<Axes::label>(idx[Axes::label]...)...};
+                
+                return std::make_tuple(
+                        /*int*/block_id2rank.get_rank((src_indices[Axes::label]/Axes::num_grid)...),
+                        /*bool*/src_indices[TargetDim] % TargetAxis::num_grid <  TargetAxis::L_ghost_length//=R_ghost_length
+                    );
             }
-            std::cout<<"]\n\n";*/
+            else{
+                std::array<int,DIM> src_indices={BoundaryElement<TargetDim>::template right<Axes::label>(idx[Axes::label]...)...};
+                return std::make_tuple(
+                        /*int*/block_id2rank.get_rank((src_indices[Axes::label]/Axes::num_grid)...),
+                        /*bool*/src_indices[TargetDim] % TargetAxis::num_grid <  TargetAxis::L_ghost_length//=R_ghost_length
+                    );
+            }
+        }
+        //else{
+            //BoundaryCondition の要素数＜Axesの数ならば、あまりのAxesは固定して送信先を決める。電場、磁場の境界条件をつくるのに便利。
+            static_assert(TargetDim < BC_Dim,"CommPathGenerator::calc_candidate()->  TargetDim < BC_Dim が必要です。");
+            std::array<int,DIM> src_indices;
+            std::array<int,BC_Dim> a;
+            [&]<std::size_t ...I>(std::index_sequence<I...>){
+                // ← ここで内側の引数を一度作る
+                auto make_args = [&](auto dim_const) {
+                    return  [&]<std::size_t... J>(std::index_sequence<J...>) {
+                                if constexpr(Is_tgt_left){
+                                    return BoundaryElement<TargetDim>
+                                        ::template left<dim_const>(
+                                            (idx[J])...);
+                                }
+                                else{
+                                    return BoundaryElement<TargetDim>
+                                        ::template right<dim_const>(
+                                            (idx[J])...);
+                                }
+                            }(std::make_index_sequence<BC_Dim>{});
+                };
+                a ={make_args(std::integral_constant<std::size_t, I>{})...};
+            }(std::make_index_sequence<BC_Dim>{});
+
+            for(int i=0;i<BC_Dim;i++){
+                src_indices[i] = a[i];
+            }
+            for(int i=BC_Dim;i<DIM;i++){
+                src_indices[i] = idx[i];
+            }
+            
             return std::make_tuple(
                     /*int*/block_id2rank.get_rank((src_indices[Axes::label]/Axes::num_grid)...),
                     /*bool*/src_indices[TargetDim] % TargetAxis::num_grid <  TargetAxis::L_ghost_length//=R_ghost_length
                 );
-        }
-        else{
-            std::array<int,DIM> src_indices={BoundaryElement<TargetDim>::template right<Axes::label>(idx[Axes::label]...)...};
-            return std::make_tuple(
-                    /*int*/block_id2rank.get_rank((src_indices[Axes::label]/Axes::num_grid)...),
-                    /*bool*/src_indices[TargetDim] % TargetAxis::num_grid <  TargetAxis::L_ghost_length//=R_ghost_length
-                );
-        }
+
+        //}
     }
 
 
@@ -110,7 +143,6 @@ public:
                                         std::get<Is>(axes).block_id
                                     )...);
                     }(std::make_index_sequence<DIM>{});
-                //std::cout<<rank<<"->"<<dst_rank<<" ";
                 retval[rank].left = Endpoint{dst_rank, Hand::RIGHT};
             }
         }
@@ -118,7 +150,6 @@ public:
 
         //境界条件のための通信パスの登録
         for(int rank=0;rank<thread_num;rank++){
-            //std::cout<<rank<<" "<<std::flush;
             std::tuple<Axes...> axes = axis_instantiator<Axes...>(rank);
             auto& target_axis = std::get<TargetDim>(axes);
             if (target_axis.block_id == 0){

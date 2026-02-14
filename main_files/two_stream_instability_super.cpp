@@ -553,6 +553,7 @@ int main(int argc, char** argv)
         boundary_manager.apply<Axis_vx>();
         
         //Global::current_calculator.calc();
+        current.compute_global_current();
         fdtd_solver.develop(dt , grid_size_x_);
         apply_periodic_1d(Global::e_field);
 
