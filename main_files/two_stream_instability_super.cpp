@@ -32,17 +32,10 @@ int vx_start_id;
 #include "../supercomputer_instruments/n_d_tensor_with_ghost_cell.h"
 using DistributionFunction = NdTensorWithGhostCell<Value,Axis_x_,Axis_vx>;
 
-template<typename Element>
-class Pair{
-    public:
-    using Element_t = Element;
-    Element m_half;
-    Element p_half;
-};
 //磁場の型を定義
 #include "../vec3.h"
-using MagneticField = Pair<NdTensorWithGhostCell<Vec3<Value>,Axis_x_>>;
-//B(i,j).p_half=B(x=Δx i,t=Δt(j+1/2))
+using MagneticField = NdTensorWithGhostCell<Vec3<Value>,Axis_x_>;
+//B(i,j)=B(x=Δx i,t=Δt(j+1/2))
 
 //電場の型を定義
 using ElectricField = NdTensorWithGhostCell<Vec3<Value>,Axis_x_>;
@@ -333,6 +326,47 @@ namespace Global{
         boundary_condition_vx
     );
 }
+
+//電場、磁場についても境界条件をまとめる
+class BoundaryCondition_EM_x_
+{
+public:
+    static const int label = 0;
+
+    //吸収項などを実装するとき、ゴーストセルにほかのセルの値を代入するだけではなくなる。このときtrueにする。->その場合の動作は未定義
+    static constexpr bool not_only_comm = false;
+
+    //ghost_cell[calc_x,calc_vx] <- cell[calc_x_ + Axis_x_::num_grid,calc_vx] 
+    template<int Index>
+    static int left(int calc_x_){
+        return 0;
+    }
+    //ghost_cell[calc_x,calc_vx] <- cell[calc_x_ - Axis_x_::num_grid,calc_vx] 
+    template<int Index>
+    static int right(int calc_x_){
+        return 0;
+    }
+};
+
+template<>
+inline int BoundaryCondition_EM_x_::left<0>(const int calc_x_){
+    return calc_x_ + Axis_x_::num_global_grid;
+}
+
+template<>
+inline int BoundaryCondition_EM_x_::right<0>(const int calc_x_){
+    return calc_x_ - Axis_x_::num_global_grid;
+}
+
+using BoundaryCondition_EM = Pack<BoundaryCondition_EM_x_>;
+namespace Global{
+    BoundaryCondition_EM_x_ boundary_condition_EM_x_;
+
+    Pack boundary_condition_em(
+        boundary_condition_EM_x_
+    );
+}
+
 /*----------------------------------------------------------------------------
  * ターゲットとなる関数とboundary_conditionを用いてboundary_managerを作成します。
  *---------------------------------------------------------------------------*/
@@ -381,11 +415,11 @@ Value fM(Value v_tilde/*無次元量が入る*/){
 }
 
 
-void initialize_distribution()
+void initialize_distribution(int seed)
 {
     constexpr Value eps = 1e-3;
 
-    std::mt19937 rng(12345);
+    std::mt19937 rng(12345 + seed);
     std::uniform_real_distribution<Value> uni(-1.0,1.0);
 
     for(int ix=0; ix<Axis_x_::num_grid; ix++){
@@ -458,8 +492,7 @@ int main(int argc, char** argv)
 
     Global::dist_function.comm_init(world_rank);
     Global::e_field.comm_init(world_rank);
-    Global::m_field.m_half.comm_init(world_rank);
-    Global::m_field.p_half.comm_init(world_rank);
+    Global::m_field.comm_init(world_rank);
 
     
     CommPathGenerator<BoundaryCondition, Axis_x_, Axis_vx> gen(world_size);
@@ -524,12 +557,16 @@ int main(int argc, char** argv)
     vx_start_id = axis_vx.L_id;
 
     BoundaryManager boundary_manager(world_rank,world_size,Global::dist_function,Global::boundary_condition,axis_x_,axis_vx);
+    BoundaryManager boundary_manager_e(world_rank,world_size,Global::e_field,Global::boundary_condition_em,axis_x_,axis_vx);
+    BoundaryManager boundary_manager_m(world_rank,world_size,Global::m_field,Global::boundary_condition_em,axis_x_,axis_vx);
     //}
     //初期化
-    initialize_distribution();
+    initialize_distribution(axis_x_.block_id);
     // 初期化後のゴーストセル更新（重要）
     boundary_manager.apply<Axis_x_>();
     boundary_manager.apply<Axis_vx>();
+    boundary_manager_e.apply<Axis_x_>();
+    boundary_manager_m.apply<Axis_x_>();
 
     solve_poisson_1d_periodic();
 
@@ -547,22 +584,37 @@ int main(int argc, char** argv)
     timer.start();
     for(int i=0;i<num_steps;i++){
         if(world_rank==0 && i%100==0)std::cout<<i<<std::endl;
-        equation.solve<Axis_x_>(dt/2.);
-        boundary_manager.apply<Axis_x_>();
-        equation.solve<Axis_vx>(dt);
-        boundary_manager.apply<Axis_vx>();
+        //v(0), x(0), E(0), B(1/2), J(-1/2)
         
+        equation.solve<Axis_vx>(dt/2.);
+        boundary_manager.apply<Axis_vx>();
+
+        //v(1/2), x(0), E(0), B(1/2), J(-1/2)
+
+        equation.solve<Axis_x_>(dt);
+        boundary_manager.apply<Axis_x_>();
         //Global::current_calculator.calc();
         current.compute_global_current();
-        fdtd_solver.develop(dt , grid_size_x_);
-        apply_periodic_1d(Global::e_field);
 
-        equation.solve<Axis_x_>(dt/2.);
-        boundary_manager.apply<Axis_x_>();
+        //v(1/2), x(1), E(0), B(1/2), J(1/2)
+
+        fdtd_solver.develop_e(dt , grid_size_x_);
+        boundary_manager_e.apply<Axis_x_>();
+
+        //v(1/2), x(1), E(1), B(1/2), J(1/2)
+        
+
+        equation.solve<Axis_vx>(dt/2.);
+        boundary_manager.apply<Axis_vx>();
+        //v(1), x(1), E(1), B(1/2), J(1/2)
+        
+        fdtd_solver.develop_m(dt , grid_size_x_);
+        boundary_manager_m.apply<Axis_x_>();
+        //v(1), x(1), E(1), B(3/2), J(1/2)
 
 
-        //if(i%20 == 0){
-        if(false){
+        if(i%20 == 0){
+        //if(false){
             projected_saver.save("../output/two_stream/rank_" 
                                     + std::to_string(world_rank) 
                                     + "__step_" 

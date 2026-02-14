@@ -44,6 +44,7 @@ class NdTensorWithGhostCell {
  * 2.1 Compile-time 定数・レイアウト情報
  ***************************************************/
 public:
+    using Value = T;
     static constexpr int N_dim = sizeof...(Axes);
 
     static constexpr std::array<Index, N_dim> shape = {Axes::num_grid...};

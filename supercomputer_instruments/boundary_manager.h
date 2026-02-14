@@ -113,14 +113,17 @@ inline std::ostream& operator<<(std::ostream& input,CommInfo& r){
 template<typename TargetFunc,typename BoundaryCondition, Axis_T... Axes>
 class BoundaryManager{
 private:
+    using TargetFuncValue = typename TargetFunc::Value;
     const BC2BlockId<BoundaryCondition, Axes...> bc2block_id;
     std::tuple<Axes...> axes_tuple;
 
     const BoundaryCondition& boundary_condition;
     TargetFunc& target_func;
     static constexpr int Dim = TargetFunc::shape.size();
+    static constexpr int BC_Dim = BoundaryCondition::get_num_objects();
 
-    static_assert(Dim == sizeof...(Axes), "TaretFuncの次元数とAxesの数が一致しません。");
+    static_assert(Dim == BC_Dim,"TaretFuncの次元数とBoundaryConditionの数が一致しません。");
+    static_assert(Dim <= sizeof...(Axes));
 
     BlockId2Rank<Axes...> blockid2rank;
     const int my_world_rank;
@@ -132,7 +135,7 @@ private:
     //Axesの入力方法が正しいか確認(開始)
     template<int I = 0>
     static constexpr bool axis_order_checker(){
-        if constexpr (I == Dim) {
+        if constexpr (I == sizeof...(Axes)) {
             return true;
         } else {
             return std::tuple_element_t<I, std::tuple<Axes...>>::label == I
@@ -266,7 +269,7 @@ private:
                                 >;
             
             target_func.template set_value_sliced<std::conditional_t<Idx == target_dim, TargetSlice, FullSlice>...>(
-                [&]<typename ...Ints>(Ints ...indices)->Value {
+                [&]<typename ...Ints>(Ints ...indices)-> TargetFuncValue {
                     return target_func.template buf_at<TargetAxis,Is_src_left>(
                         (Idx == target_dim ? 
                             indices 
@@ -292,7 +295,7 @@ private:
             std::tuple<Axes...> src_axes_tuple = axis_instantiator<Axes...>(src_rank);
             
             target_func.template set_value_sliced<std::conditional_t<Idx == target_dim, TargetSlice, FullSlice>...>(
-                [&]<typename ...Ints>(Ints ...indices)->Value {
+                [&]<typename ...Ints>(Ints ...indices)->TargetFuncValue {
                     if constexpr(Is_my_left){
 
                         auto idx_tuple = std::tuple{indices...};
@@ -358,7 +361,7 @@ private:
                                 >;
             
             target_func.template set_value_sliced<std::conditional_t<Idx == target_dim, TargetSlice, FullSlice>...>(
-                [&]<typename ...Ints>(Ints ...indices)->Value {
+                [&]<typename ...Ints>(Ints ...indices)->TargetFuncValue {
                     if constexpr(Is_my_left){
 
                         auto idx_tuple = std::tuple{indices...};
