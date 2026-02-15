@@ -378,7 +378,7 @@ private:
                                 }(std::make_index_sequence<sizeof...(Ints)>{});
                             };
 
-                            return target_func.template at(
+                            return target_func.at(
                                 (
                                     make_args(std::integral_constant<std::size_t, I>{})
                                     - std::get<I>(axes_tuple).L_id
@@ -403,7 +403,7 @@ private:
                                 }(std::make_index_sequence<sizeof...(Ints)>{});
                             };
 
-                            return target_func.template at(
+                            return target_func.at(
                                 (
                                     make_args(std::integral_constant<std::size_t, I>{})
                                     - std::get<I>(axes_tuple).L_id
