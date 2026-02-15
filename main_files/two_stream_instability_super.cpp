@@ -19,8 +19,8 @@ using namespace std;
 //最後の3,3 >はゴーストセルのグリッド数です。
 //物理空間↔計算空間の写像は、全単射である必要があります。
 #include "../supercomputer_instruments/axis.h"
-using Axis_x_ = Axis<0,256/6,6,3>;
-using Axis_vx = Axis<1,512/1,1,3>;
+using Axis_x_ = Axis<0,256/8,8,3>;
+using Axis_vx = Axis<1,512/4,4,3>;
 
 //担当するブロックの各軸の左端インデックス
 //main関数内で設定される。グローバル変数で使うので、ここで定義している。
@@ -181,6 +181,10 @@ public:
 //------------------------------------------
 // 2. q/m (E + v×B)_x
 //------------------------------------------
+namespace Global{
+    bool is_velo_left_edge;
+    bool is_velo_right_edge;
+}
 class Fvx {
 private:
 public:
@@ -188,10 +192,10 @@ public:
 
     Value at(int calc_x_, int calc_vx) const {
         //速度空間の境界でフラックスが0になるように、移流を反対称にする。
-        if (calc_vx == -1){
+        if (Global::is_velo_left_edge && calc_vx == -1){
             return - at(calc_x_, 0);
         }
-        else if(calc_vx == Axis_vx::num_grid){
+        else if(Global::is_velo_right_edge && calc_vx == Axis_vx::num_grid){
             return - at(calc_x_, Axis_vx::num_grid-1);
         }
         else{
@@ -478,8 +482,6 @@ void solve_poisson_1d_periodic() {
 #include "../supercomputer_instruments/axis_instantiator.h"
 #include "../supercomputer_instruments/boundary_manager.h"
 #include "../projected_saver_2D.hpp"
-#include "../supercomputer_instruments/comm_path_generator.h"
-#include "../supercomputer_instruments/comm_graph_constructor.h"
 #include "../utils/Timer.h"
 
 int main(int argc, char** argv)
@@ -493,56 +495,6 @@ int main(int argc, char** argv)
     Global::dist_function.comm_init(world_rank);
     Global::e_field.comm_init(world_rank);
     Global::m_field.comm_init(world_rank);
-
-    
-    CommPathGenerator<BoundaryCondition, Axis_x_, Axis_vx> gen(world_size);
-    auto x1 = gen.get_comm_path<Axis_x_>();
-
-    auto ring_and_linear1 = buildRingsAndLinears(x1);
-
-    auto rings1 = ring_and_linear1.first;
-    auto linears1 = ring_and_linear1.second;
-
-    auto x2 = gen.get_comm_path<Axis_vx>();
-    auto ring_and_linear2 = buildRingsAndLinears(x2);
-
-    auto rings2 = ring_and_linear2.first;
-    auto linears2 = ring_and_linear2.second;
-
-    //if(world_rank == 0){
-    if(false){
-        std::cout << "=== Rings ===\n";
-        for (auto& r : rings1) {
-            std::cout << "Ring: ";
-            for (int n : r.nodes) std::cout << n << " ";
-            std::cout << "\n";
-        }
-
-        std::cout << "=== Linears ===\n";
-        for (auto& l : linears1) {
-            std::cout << "Linear: ";
-            for (int n : l.nodes) std::cout << n << " ";
-            std::cout << "\n";
-        }
-
-        std::cout<<"linear2.size:"<<linears2.size()<<"\n";
-            
-        std::cout << "=== Rings ===\n";
-        for (auto& r : rings2) {
-            std::cout << "Ring: ";
-            for (int n : r.nodes) std::cout << n << " ";
-            std::cout << "\n";
-        }
-
-        std::cout << "=== Linears ===\n";
-        for (auto& l : linears2) {
-            std::cout << "Linear: ";
-            for (int n : l.nodes) std::cout << n << " ";
-            std::cout << "\n";
-        }
-    }
-
-        
     
     Current_type current(world_rank);
     
@@ -555,11 +507,13 @@ int main(int argc, char** argv)
     auto [axis_x_, axis_vx] = axis_instantiator<Axis_x_,Axis_vx>(world_rank);
     x__start_id = axis_x_.L_id;
     vx_start_id = axis_vx.L_id;
+    Global::is_velo_left_edge = (axis_vx.block_id==0);
+    Global::is_velo_right_edge = (axis_vx.block_id == Axis_vx::num_blocks-1);
 
     BoundaryManager boundary_manager(world_rank,world_size,Global::dist_function,Global::boundary_condition,axis_x_,axis_vx);
     BoundaryManager boundary_manager_e(world_rank,world_size,Global::e_field,Global::boundary_condition_em,axis_x_,axis_vx);
     BoundaryManager boundary_manager_m(world_rank,world_size,Global::m_field,Global::boundary_condition_em,axis_x_,axis_vx);
-    //}
+    
     //初期化
     initialize_distribution(axis_x_.block_id);
     // 初期化後のゴーストセル更新（重要）
@@ -583,7 +537,7 @@ int main(int argc, char** argv)
     Timer timer;
     timer.start();
     for(int i=0;i<num_steps;i++){
-        if(world_rank==0 && i%100==0)std::cout<<i<<std::endl;
+        //if(world_rank==0 && i%100==0)std::cout<<i<<std::endl;
         //v(0), x(0), E(0), B(1/2), J(-1/2)
         
         equation.solve<Axis_vx>(dt/2.);
@@ -612,6 +566,15 @@ int main(int argc, char** argv)
         boundary_manager_m.apply<Axis_x_>();
         //v(1), x(1), E(1), B(3/2), J(1/2)
 
+
+        //if(i%20 == 0){
+        if(false){
+            Global::dist_function.save_physical_fast("../output/two_stream/rank_" 
+                                    + std::to_string(world_rank) 
+                                    + "__step_" 
+                                    + std::to_string(i/20) 
+                                    + ".bin");
+        }
 
         if(i%20 == 0){
         //if(false){

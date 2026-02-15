@@ -432,6 +432,50 @@ public:
         writer(writer, idxs, 0);
     }
 
+    void save_physical_fast(const std::string& filename) const {
+        std::ofstream ofs(filename, std::ios::binary);
+        if (!ofs) throw std::runtime_error("Failed to open file for saving");
+
+        int64_t ndim = N_dim;
+        ofs.write(reinterpret_cast<const char*>(&ndim), sizeof(int64_t));
+
+        for (int i = 0; i < ndim; ++i) {
+            int64_t s = shape[i];
+            ofs.write(reinterpret_cast<const char*>(&s), sizeof(int64_t));
+        }
+
+        // 物理領域の最初の線形位置
+        constexpr int last_dim = N_dim - 1;
+        const Index inner_size = shape[last_dim];
+
+        // 外側次元の総数
+        Index outer_size = 1;
+        for (int d = 0; d < last_dim; ++d)
+            outer_size *= shape[d];
+
+        for (Index outer = 0; outer < outer_size; ++outer) {
+
+            // outer を多次元 index に戻す
+            Index tmp = outer;
+            Index base_index = offset;
+
+            for (int d = last_dim - 1; d >= 0; --d) {
+                Index i = tmp % shape[d];
+                tmp /= shape[d];
+                base_index += i * strides[d];
+            }
+
+            // 物理領域の開始位置
+            base_index += 0 * strides[last_dim];
+
+            const T* ptr = &data[base_index];
+
+            ofs.write(reinterpret_cast<const char*>(ptr),
+                    sizeof(T) * inner_size);
+        }
+    }
+
+
 
     void load_physical(const std::string& filename) {
         std::ifstream ifs(filename, std::ios::binary);
@@ -470,6 +514,51 @@ public:
         std::array<int, sizeof...(Axes)> idxs{};
         reader(reader, idxs, 0);
     }
+
+    void load_physical_fast(const std::string& filename) {
+        std::ifstream ifs(filename, std::ios::binary);
+        if (!ifs) throw std::runtime_error("Failed to open file for loading");
+
+        int64_t ndim_file;
+        ifs.read(reinterpret_cast<char*>(&ndim_file), sizeof(int64_t));
+
+        if (ndim_file != N_dim)
+            throw std::runtime_error("Dimension mismatch in load()");
+
+        for (int i = 0; i < ndim_file; ++i) {
+            int64_t s_file;
+            ifs.read(reinterpret_cast<char*>(&s_file), sizeof(int64_t));
+            if (s_file != shape[i])
+                throw std::runtime_error("Shape mismatch in load()");
+        }
+
+        std::fill(data.begin(), data.end(), T{});
+
+        constexpr int last_dim = N_dim - 1;
+        const Index inner_size = shape[last_dim];
+
+        Index outer_size = 1;
+        for (int d = 0; d < last_dim; ++d)
+            outer_size *= shape[d];
+
+        for (Index outer = 0; outer < outer_size; ++outer) {
+
+            Index tmp = outer;
+            Index base_index = offset;
+
+            for (int d = last_dim - 1; d >= 0; --d) {
+                Index i = tmp % shape[d];
+                tmp /= shape[d];
+                base_index += i * strides[d];
+            }
+
+            T* ptr = &data[base_index];
+
+            ifs.read(reinterpret_cast<char*>(ptr),
+                    sizeof(T) * inner_size);
+        }
+    }
+
 
 /***************************************************
  * 2.11 ctor / utility

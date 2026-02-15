@@ -4,7 +4,7 @@
 #SBATCH -t 00:10:00
 #SBATCH -o out.txt
 #SBATCH -e err.txt
-#SBATCH --rsc p=256:t=1:c=1:m=2G
+#SBATCH --rsc p=32:t=1:c=1:m=2G
 
 # エラーが出たら即終了
 set -e
@@ -41,5 +41,5 @@ unset I_MPI_OFI_PROVIDER
 #export I_MPI_DEBUG=5
 
 # 3. 実行
-srun --mpi=pmi2 -n 256 ./vlasov
+srun --mpi=pmi2 -n 32 ./vlasov
 
