@@ -401,8 +401,8 @@ int main(){
     //Value dt = 0.1 / Norm::Param::omega_pe/Norm::Base::t0;
     Value dt = 0.01 ;
     int num_steps = 100000;
-    std::ofstream ex_log("Ex_t.dat");
-    std::ofstream f_log("f.dat");
+    std::ofstream ex_log("../output/langmuir/Ex_t.dat");
+    std::ofstream f_log("../output/langmuir/f.dat");
     for(int i=0;i<num_steps;i++){
         std::cout<<i<<std::endl;
         Global::equation.solve<Axis_vx>(dt/2.);

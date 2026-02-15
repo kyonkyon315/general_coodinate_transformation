@@ -1,0 +1,9 @@
+CompileFlags:
+  Compiler: /usr/bin/g++
+  Add:
+    - [-std=c++20,-fopenmp]
+    - -fopenmp
+    - -I/usr/lib/gcc/x86_64-linux-gnu/13/include
+    - -I/usr/lib/x86_64-linux-gnu/openmpi/include
+    - -I/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi
+

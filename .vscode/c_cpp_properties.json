@@ -1,0 +1,18 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "/usr/lib/x86_64-linux-gnu/openmpi/include",
+                "/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi"
+            ],
+            "compilerPath": "/usr/bin/g++",
+            "cppStandard": "gnu++20",
+            "cStandard": "c17",
+            "intelliSenseMode": "linux-gcc-x64",
+            "compilerArgs": ["-std=gnu++20"]
+        }
+    ],
+    "version": 4
+}

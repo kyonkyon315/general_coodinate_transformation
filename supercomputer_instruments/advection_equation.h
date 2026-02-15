@@ -7,43 +7,35 @@
 #define ALWAYS_INLINE inline
 #endif
 
-#include "independent.h"
-#include "utils/arg_changer.h"
-#include "utils/tuple_head.h"
+#include "../independent.h"
+#include "../utils/arg_changer.h"
+#include "../utils/tuple_head.h"
 #include <type_traits>
-#include <array>
 #include <utility>
-#include <omp.h>
+//#include <omp.h>
 #include <cmath>
-#include "none.h"
+#include "../none.h"
+#include <iostream>
+
 
 using Value = double;
-template<typename TargetFunction,typename Operators,typename Advections,typename Jacobian,typename Scheme,typename BoundaryCondition,typename Current>
+template<typename TargetFunction,typename Advections,typename Jacobian,typename Scheme,typename Current>
 class AdvectionEquation
 {
 private:
     TargetFunction& target_func;
     TargetFunction func_buffer;
     Current& current;
-    const Operators& operators;
     const Advections& advections;
     const Jacobian& jacobian;
     const Scheme& scheme;
-    const BoundaryCondition& boundary_condition;
 
     static constexpr int dimension = TargetFunction::get_dimension();
     static constexpr int real_dimension = Current::get_dimension();
     static constexpr int velo_dimension = dimension - real_dimension;
 
-    
-    static constexpr bool need_current = []()constexpr{
-        if constexpr(std::is_same_v<Current,None_current>)return false;
-        return true;
-    }();
-
     static_assert(
         []()constexpr{
-            if(!need_current)return true;
             if(velo_dimension < 0)return false;
             for(int i = 0;i < real_dimension; ++i){
                 if(TargetFunction::shape[i]!=Current::shape[i])return false;
@@ -56,13 +48,18 @@ private:
     static constexpr int L = Scheme::used_id_left;
     static constexpr int R = Scheme::used_id_right;
 
+    static constexpr bool need_current = []()constexpr{
+        if constexpr(std::is_same_v<Current,None_current>)return false;
+        return true;
+    }();
+
 
     
     //連鎖率を用いて、計算空間でのフラックスを計算します。
     template<int I,int Target_Dim,typename... Ints>
     ALWAYS_INLINE
     Value advection_in_calc_space_helper(Ints... indices){
-        using E = typename Jacobian::element_t<Target_Dim,I>;
+        using E = typename Jacobian::template element_t<Target_Dim,I>;
         if constexpr(I==dimension-1){
             if constexpr(std::is_same_v<E, Independent>){
                 //こんなことしなくても最適化で０の項はなくなるかも。
@@ -128,6 +125,7 @@ private:
             //増加分を保存
             func_buffer.at(indices...) = Um-Up;
         }
+
         else if constexpr(Depth==0){
             //[@TODO]Dim==1のときはomp発動しないようにした方がいいかも。
             constexpr int axis_len = TargetFunction::shape[Depth];
@@ -166,19 +164,19 @@ private:
 
         // チェーンルールによる advection 計算
         Value advection_p_1 = Utility::arg_changer<Value,Target_Dim,1>(
-                            [this](auto... idxs) -> Value{
+                            [this](auto... idxs) -> Value {
                                 return this->advection_in_calc_space<Target_Dim>(idxs...);
                             },
                             indices...
                         );
         Value advection = Utility::arg_changer<Value,Target_Dim,0>(
-                            [this](auto... idxs) -> Value{
+                            [this](auto... idxs) -> Value {
                                 return this->advection_in_calc_space<Target_Dim>(idxs...);
                             },
                             indices...
                         );
         Value advection_m_1 = Utility::arg_changer<Value,Target_Dim,-1>(
-                            [this](auto... idxs) -> Value{
+                            [this](auto... idxs) -> Value {
                                 return this->advection_in_calc_space<Target_Dim>(idxs...);
                             },
                             indices...
@@ -187,7 +185,7 @@ private:
         Value nyu_m_half = - dt * (advection+advection_m_1)/2.;
         
         this->scheme.calc_U(
-            Utility::arg_changer<Target_Dim, stencil_offsets[Is]>(
+            Utility::arg_changer<Value, Target_Dim, stencil_offsets[Is]>(
                 [this](auto... idxs) -> Value {
                     return this->target_func.at(idxs...);
                 },
@@ -208,23 +206,19 @@ private:
 public:
     AdvectionEquation(
         TargetFunction& target_func,
-        const Operators& operators,
         const Advections& advections,
         const Jacobian& jacobian,
         const Scheme& scheme,
-        const BoundaryCondition& boundary_condition,
         Current& current
     ):
         target_func(target_func),
-        operators(operators),
         advections(advections),
         jacobian(jacobian),
         scheme(scheme),
-        boundary_condition(boundary_condition),
         current(current)
     {
-        static_assert(target_func.get_dimension()==operators.get_num_objects());
-        static_assert(target_func.get_dimension()==advections.get_num_objects());
+        static_assert(TargetFunction::get_dimension() == Advections::get_num_objects(),
+                        "target_func の次元数と移流項の数が一致しません");
     }
     template<typename CalcAxis>
     void solve(Value dt){

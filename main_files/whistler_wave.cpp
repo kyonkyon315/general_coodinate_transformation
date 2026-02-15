@@ -16,10 +16,10 @@ using namespace std;
 //計算空間の軸なので、一律Δx=1であり、軸同士は直交しています。
 //最後の3,3 >はゴーストセルのグリッド数です。
 //物理空間↔計算空間の写像は、全単射である必要があります。
-using Axis_z_ = Axis<0,256,3,3>;
-using Axis_vr = Axis<1,512,3,3>;
-using Axis_vt = Axis<2,64,3,3>;
-using Axis_vp = Axis<3,32,3,3>;
+using Axis_z_ = Axis<0,128,2,3>;
+using Axis_vr = Axis<1,256,2,3>;
+using Axis_vt = Axis<2,64,1,3>;
+using Axis_vp = Axis<3,32,1,3>;
 
 
 //電子分布関数の型を定義
@@ -623,7 +623,7 @@ Value fM(Value vx_tilde, Value vy_tilde, Value vz_tilde){
     const Value v_thermal_para_pow2 = 1.;
     const Value v_thermal_perp_pow2 = v_thermal_para_pow2 * A;
     
-    return  Norm::Coef::Ne_tilde 
+    return  Norm::Coef::Ne_tilde
         * std::exp(
             -vz_tilde*vz_tilde/(2.*v_thermal_para_pow2)
             -(vx_tilde*vx_tilde+vy_tilde*vy_tilde)/(2.*v_thermal_perp_pow2)
@@ -716,7 +716,6 @@ int main(){
     //Value dt = 0.1 * std::min(dt_vlasov, dt_maxwell);
     //Value dt = 0.1 * dt_vlasov;
 
-
     //Value dt = 0.1 / Norm::Param::omega_pe/Norm::Base::t0;
     Value dt = 0.01 ;
     int num_steps = 100000;
@@ -750,7 +749,6 @@ int main(){
 
         timer.stop();
         std::cout<<timer<<"\n";
-
     }
     return 0;
 }

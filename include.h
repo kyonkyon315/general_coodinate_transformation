@@ -1,6 +1,3 @@
-#include "axis.h"
-#include "n_d_tensor_with_ghost_cell.h"
-#include "n_d_tensor.h"
 #include "vec3.h"
 #include "pack.h"
 
@@ -8,7 +5,6 @@
 #include "jacobian.h"
 #include "schemes/include.h"
 #include "boundary_manager.h"
-#include "advection_equation.h"
 #include "utils/Timer.h"
 
 #include "projected_saver_2D.hpp"
@@ -20,3 +16,9 @@
 #include "normalization.h"
 
 #include "none.h"
+
+#include "advection_equation.h"
+#include "axis.h"
+#include "n_d_tensor_with_ghost_cell.h"
+#include "n_d_tensor.h"
+
