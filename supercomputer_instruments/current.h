@@ -117,6 +117,13 @@ public:
         }
     }
 
+    void clear(){
+        const int data_size = tensor.data.size();
+        for(int i=0;i<data_size;i++){
+            tensor.data[i]= T{};
+        }
+    }
+
     //グローバル電流 
     //グローバル電流は外から書き換える必要ないのでconst ref のみ
     template<typename... Idx>

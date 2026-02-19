@@ -1,10 +1,10 @@
 #!/bin/bash
 #============ Slurm Options ===========
 #SBATCH -p gr20001a
-#SBATCH -t 00:10:00
+#SBATCH -t 00:30:00
 #SBATCH -o out.txt
 #SBATCH -e err.txt
-#SBATCH --rsc p=32:t=1:c=1:m=2G
+#SBATCH --rsc p=512:t=1:c=1:m=4G
 
 # エラーが出たら即終了
 set -e
@@ -27,7 +27,7 @@ pwd
 # 2. コンパイル（C++20対応 & includeパス追加）
 mpiicpx -O3 -std=c++20 \
 -Wl,-rpath=${I_MPI_ROOT}/libfabric/lib \
-two_stream_instability_super.cpp -o vlasov
+bernstein_wave_super_kai.cpp -o vlasov 
 
 echo "Compile finished."
 
@@ -41,5 +41,5 @@ unset I_MPI_OFI_PROVIDER
 #export I_MPI_DEBUG=5
 
 # 3. 実行
-srun --mpi=pmi2 -n 32 ./vlasov
+srun --mpi=pmi2 -n 512 ./vlasov
 

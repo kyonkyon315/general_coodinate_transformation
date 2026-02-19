@@ -96,7 +96,6 @@ private:
             for(int i=BC_Dim;i<DIM;i++){
                 src_indices[i] = idx[i];
             }
-            
             return std::make_tuple(
                     /*int*/block_id2rank.get_rank((src_indices[Axes::label]/Axes::num_grid)...),
                     /*bool*/src_indices[TargetDim] % TargetAxis::num_grid <  TargetAxis::L_ghost_length//=R_ghost_length
@@ -118,6 +117,7 @@ public:
 
         //まずは内部の通信パスを登録する。
         //注目している軸について、block_idを±1するだけでよい。
+        
         for(int rank=0;rank<thread_num;rank++){
             //std::cout<<rank<<" "<<std::flush;
             std::tuple<Axes...> axes = axis_instantiator<Axes...>(rank);
@@ -147,6 +147,7 @@ public:
             }
         }
         //内部の通信パスの登録　終了
+        
 
         //境界条件のための通信パスの登録
         for(int rank=0;rank<thread_num;rank++){
@@ -162,7 +163,7 @@ public:
             if (target_axis.block_id == TargetAxis::num_blocks -1){
                 std::tuple<int,bool> dst_rank_and_is_left = [&]<std::size_t... Is>(std::index_sequence<Is...>) -> std::tuple<int,bool>
                     {
-                        return calc_candidate<false, TargetDim>((std::get<Is>(axes))...);
+                        return this->calc_candidate<false, TargetDim>((std::get<Is>(axes))...);
                     }(std::make_index_sequence<DIM>{});
                 auto& [dst_rank, is_left] = dst_rank_and_is_left;
                 retval[rank].right = Endpoint{dst_rank, (is_left ? Hand::LEFT : Hand::RIGHT)};
