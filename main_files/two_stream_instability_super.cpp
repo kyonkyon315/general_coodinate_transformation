@@ -10,13 +10,13 @@ using Value = double;
 using namespace std;
 
 //計算空間の座標を設定します。
-//Axis<ここには軸の通し番号をintで入力します。,ここには座標のグリッドの数をintで入力します,3,3>
+//Axis<ここには軸の通し番号をintで入力します。,
+// ここには座標のグリッドの数をintで入力します,並列化で何個に分けるか,ゴーストセル数>
 //全体をなめる計算においては、通し番号が小さいものほど、より外側のループを担当することになります。
 //また、x,v空間で、∂x/∂v = 0である必要があります。（電流の計算を簡単に行うための措置です。）
 //∂v/∂x = 0 は要求されていません。（例えば背景磁場に沿って速度空間の向きを変えたい時など）
 //通し番号は重複することなく、互いに隣り合った0以上の整数である必要があります。また、0を含む必要があります。
 //計算空間の軸なので、一律Δx=1であり、軸同士は直交しています。
-//最後の3,3 >はゴーストセルのグリッド数です。
 //物理空間↔計算空間の写像は、全単射である必要があります。
 #include "../supercomputer_instruments/axis.h"
 using Axis_x_ = Axis<0,256/8,8,3>;
@@ -29,6 +29,7 @@ int vx_start_id;
 
 //電子分布関数の型を定義
 //先頭に入力する型はテンソルの値の型です。その後に続く軸は、通し番号が小さいものほど左に入力してください。
+//入れる軸の数を変えることで次元数を調節できます。
 #include "../supercomputer_instruments/n_d_tensor_with_ghost_cell.h"
 using DistributionFunction = NdTensorWithGhostCell<Value,Axis_x_,Axis_vx>;
 
@@ -411,6 +412,7 @@ fdtd関連の設定終わり。
 /*分布関数の初期化関数の設定*/
 Value fM(Value v_tilde/*無次元量が入る*/){
     const Value U = 3.3 * Norm::Param::v_thermal / Norm::Base::v0;
+    //[TODO]*(grid_size_x_*grid_size_vx)いらなくね？
     return Norm::Coef::Ne_tilde * std::exp(-(v_tilde-U)*(v_tilde-U)/2.)
            / std::sqrt(2*M_PI)*(grid_size_x_*grid_size_vx)/2.
            + Norm::Coef::Ne_tilde * std::exp(-(v_tilde+U)*(v_tilde+U)/2.)
@@ -542,6 +544,8 @@ int main(int argc, char** argv)
         
         equation.solve<Axis_vx>(dt/2.);
         boundary_manager.apply<Axis_vx>();
+
+        current.clear();
 
         //v(1/2), x(0), E(0), B(1/2), J(-1/2)
 

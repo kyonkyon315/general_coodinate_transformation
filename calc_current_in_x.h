@@ -1,15 +1,15 @@
 #ifndef CALC_CURRENT_IN_X_AND_Y
 #define CALC_CURRENT_IN_X_AND_Y
 
-#include <tuple>
-#include <utility>
 #include <omp.h>
 
-using Value = double;
+
 
 // 一次元専門
 template<typename Current, typename DistFunction, typename Operators>
 class CalcCurrent_1d {
+    using Value = double;
+
 public:
     static constexpr int dim      = DistFunction::get_dimension();
     static constexpr int real_dim = Current::get_dimension();
@@ -56,20 +56,21 @@ private:
             // ---- leaf ----
             auto f = distfunction.at(z, v...);
 
-
-            
             current.at(z).x -=
                 operators.template get_object<1>().translate(z, v...) * f;
 
-            current.at(z).y -=
-                operators.template get_object<2>().translate(z, v...) * f;
         }
     }
 public:
     void calc() {
+        #pragma omp parallel for
         for (int z = 0; z < DistFunction::shape[0]; ++z) {
-            current.at(z).x = 0.0;
-            current.at(z).y = 0.0;
+
+            //current.at(z).x = 0.0;
+            //current.at(z).y = 0.0;
+            //ここで0にリセットするのは廃止。代わりに外でcurrent.clear();を実行。
+            //イオンも考えるようになったときに便利
+
             vel_loop<0>(z);
             
             //[todo]実空間のやこびあんでスケールしないといけない

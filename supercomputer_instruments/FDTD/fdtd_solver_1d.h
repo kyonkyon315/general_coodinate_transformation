@@ -20,16 +20,16 @@ class FDTD_solver_1d{
     MagneticField& m_field;
     Current& current;
 public:
-    void develop_m(const Value dt_tilde, const Value dz_tilde){
+    void develop_m(const Value dt, const Value dz){
         for(Index i=0;i<num_grid;++i){
-            m_field.at(i).x += dt_tilde/dz_tilde*(e_field.at(i).y - e_field.at(i-1).y);
-            m_field.at(i).y -= dt_tilde/dz_tilde*(e_field.at(i).x - e_field.at(i-1).x);
+            m_field.at(i).x += dt/dz*(e_field.at(i).y - e_field.at(i-1).y);
+            m_field.at(i).y -= dt/dz*(e_field.at(i).x - e_field.at(i-1).x);
         }
     }
 
-    void develop_e(const Value dt_tilde,const Value dz){
-        const Value coef = curlB_coef * dt_tilde/dz;
-        const Value jcoef = J_coef * dt_tilde;
+    void develop_e(const Value dt,const Value dz){
+        const Value coef = curlB_coef * dt/dz;
+        const Value jcoef = J_coef * dt;
         for(Index i=0;i<num_grid;++i){
             e_field.at(i).x -= coef * (m_field.at(i+1).y - m_field.at(i).y);
             e_field.at(i).y += coef * (m_field.at(i+1).x - m_field.at(i).x);

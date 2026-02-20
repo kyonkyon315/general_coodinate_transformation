@@ -418,6 +418,7 @@ int main(){
         std::cout<<i<<std::endl;
         Global::equation.solve<Axis_vx>(dt/2.);
         Global::boundary_manager.apply<Axis_vx>();
+        current.clear();
         Global::equation.solve<Axis_x_>(dt/2.);
         Global::boundary_manager.apply<Axis_x_>();
 

@@ -132,7 +132,7 @@ private:
             #pragma omp parallel for
             for(int i=0;i<axis_len;++i){
                 if constexpr(Target_Dim ==0 && need_current){
-                    current.at(i).z = 0.;
+                    //current.at(i).z = 0.;
                 }
                 // 再帰：indices に i を追加
                 solve_helper<Depth+1,Dim,Target_Dim>(dt, indices..., i);
@@ -205,6 +205,7 @@ private:
 
 public:
     AdvectionEquation(
+        int my_world_rank,
         TargetFunction& target_func,
         const Advections& advections,
         const Jacobian& jacobian,
@@ -212,6 +213,7 @@ public:
         Current& current
     ):
         target_func(target_func),
+        func_buffer(my_world_rank),
         advections(advections),
         jacobian(jacobian),
         scheme(scheme),

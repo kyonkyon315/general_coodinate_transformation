@@ -64,6 +64,20 @@ public:
         return true;
     }(), "Axis labels must be unique 二つ以上の軸でlabelが被っています。");
 
+    static constexpr int Max_label =[]()constexpr{
+        std::array<Index,N_dim> labels = {Axes::label...};
+        int ans=-1;
+        for(int i=0;i<N_dim;i++)ans=(ans<labels[i] ?labels[i]:ans);
+        return ans;
+    }();
+
+    static constexpr std::array<Index, Max_label+1> TargetAxisLabel_2_TargetDim =[]()constexpr{
+        std::array<Index,Max_label+1> retval{};
+        std::array<Index,N_dim> labels = {Axes::label...};
+        for(int i=0;i<N_dim;i++)retval[labels[i]]=i;
+        return retval;
+    }();
+
 /***************************************************
  * 2.2 メモリレイアウト（stride / offset）
  ***************************************************/
@@ -148,7 +162,7 @@ private:
     
     // set_value の再帰ヘルパー (物理領域のみ)
     template<typename Func, size_t Depth = 0, typename... Idx>
-    void set_value_helper(Func func, Idx... indices) {
+    void set_value_helper(const Func& func, Idx... indices) {
         
         if constexpr (Depth == sizeof...(Axes)) {
             this->at(indices...) = func(indices...);
@@ -163,7 +177,7 @@ private:
 
     // set_value_sliced のための再帰ヘルパー
     template<size_t Depth,typename Func, typename... Slices, typename... Idx>
-    void set_value_sliced_helper(Func func, Idx... indices) {
+    void set_value_sliced_helper(const Func& func, Idx... indices) {
         
         // 基底ケース
         if constexpr (Depth == sizeof...(Axes)) {
@@ -214,7 +228,7 @@ private:
 public:
 
     template<typename Func>
-    void set_value(Func func){
+    void set_value(const Func& func){
         set_value_helper(func);
     }
 
@@ -224,10 +238,9 @@ public:
      * スライスが確保されたメモリ領域を超える場合、自動的にクリッピングされる。
      */
     template<typename... Slices, typename Func>
-    void set_value_sliced(Func func) {
+    void set_value_sliced(const Func& func) {
         static_assert(sizeof...(Slices) == sizeof...(Axes), 
             "set_value_sliced: 次元数とスライス型の数が一致しません");
-        
         set_value_sliced_helper<0,Func, Slices...>(func);
     }
 
@@ -313,6 +326,8 @@ private:
 
     int my_world_rank;
 
+    void comm_init(int world_rank_){my_world_rank = world_rank_;}
+
     // collect_ghost_cell_helper
     // collect_ghost_cell
     // send_ghosts
@@ -345,7 +360,8 @@ private:
     template<typename TargetAxis, bool Is_left>
     int collect_ghost_cell(std::vector<T>& buf){
         //TargetAxis のゴーストセルをsend_bufに格納する。その長さをreturn する。
-        constexpr int TargetDim = TargetAxis::label;
+        //constexpr int TargetDim = TargetAxis::label;
+        constexpr int TargetDim = TargetAxisLabel_2_TargetDim[TargetAxis::label];
         int buf_len = 0;
         collect_ghost_cell_helper<TargetDim,Is_left,0>(buf,buf_len);
         return buf_len;
@@ -564,16 +580,16 @@ public:
  * 2.11 ctor / utility
  ***************************************************/
 public:
-    NdTensorWithGhostCell()
+    NdTensorWithGhostCell(const int world_rank)
     {
         data.resize(total_size,T{});
         send_buf.resize(max_ghost_buffer_size,T{});
         recv_buf.resize(max_ghost_buffer_size,T{});
 
         init_comm_ghost_buf_sizes();
+        comm_init(world_rank);
     }
 
-    void comm_init(int world_rank_){my_world_rank = world_rank_;}
     
     static constexpr int get_dimension(){return sizeof...(Axes);};
 

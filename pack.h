@@ -5,9 +5,9 @@ template<typename... Objects>
 class Pack
 {
 private:
-    std::tuple<std::add_lvalue_reference_t<Objects>...> objects;
+    const std::tuple<Objects...> objects;
 public:
-    Pack(Objects& ...objects):
+    Pack(const Objects& ...objects):
         objects(objects...)
     {}
     template<int I>

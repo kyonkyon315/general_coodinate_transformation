@@ -157,9 +157,7 @@ private:
             using TargetAxis = std::tuple_element_t<I, std::tuple<Axes...>>;
             CommPathGenerator<BoundaryCondition, Axes...> gen(thread_num);
             std::vector<Node> comm_paths = gen.template get_comm_path<TargetAxis>();
-
             std::pair<std::vector<Ring>, std::vector<Linear>> ring_and_linear = buildRingsAndLinears(comm_paths);
-
             auto rings = ring_and_linear.first;
             auto linears = ring_and_linear.second;
 
@@ -184,7 +182,6 @@ private:
                 }
             }
             auto my_node = comm_paths[my_world_rank];
-
             CommInfo comm_info;
             if(first_rank_to_comm == my_world_rank){
                 comm_info.forward.first.reset();
@@ -212,7 +209,6 @@ private:
                     };
 
             }
-
             if(second_rank_to_comm == my_world_rank){
                 comm_info.backward.first.reset();
                 comm_info.forward.second.reset();

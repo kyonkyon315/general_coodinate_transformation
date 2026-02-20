@@ -134,7 +134,7 @@ private:
             #pragma omp parallel for
             for(int i=0;i<axis_len;++i){
                 if constexpr(Target_Dim ==0 && need_current){
-                    current.at(i).z = 0.;
+                    //current.at(i).z = 0.;
                 }
                 // 再帰：indices に i を追加
                 solve_helper<Depth+1,Dim,Target_Dim>(dt, indices..., i);
