@@ -423,12 +423,24 @@ Value fM(const Value vr_tilde/*無次元量が入る*/){
     //Ne_tilde = int f_tilde dv_tilde^3
 }
 
+void init(int my_world_rank,const Jacobi_Det& jacobi_det,DistributionFunction& dist_function){
+    CalcVr_2_Vr calc_vr_2_vr(my_world_rank);
+    CalcVt_2_Vt calc_vt_2_vt(my_world_rank);
+    for(int i=0;i<Axis_vr::num_grid;i++){
+        for(int j=0;j<Axis_vt::num_grid;j++){
+            const Value vr = calc_vr_2_vr.apply(i);
+            dist_function.at(i,j) = fM(vr)/jacobi_det.at(i, j);
+        }
+    }
+}
+
 #include "../supercomputer_instruments/advection_equation.h"
 #include "../supercomputer_instruments/FDTD/fdtd_solver_1d.h"
 #include "../supercomputer_instruments/boundary_manager.h"
 #include "../jacobian.h"
 
 #include "../projected_saver_2D.hpp"
+#include "../utils/Timer.h"
 
 int main(int argc, char** argv)
 {
@@ -479,14 +491,20 @@ int main(int argc, char** argv)
     
     BoundaryManager boundary_manager(world_rank,world_size,dist_function,boundary_condition,axis_vr,axis_vt);
  
-    ProjectedSaver2D projected_saver_2D(dist_function,physic_vx,physic_vy,axis_vr,axis_vt);
+
+    Jacobi_Det jacobi_det(world_rank);
+    ProjectedSaver2D projected_saver_2D(dist_function,physic_vx,physic_vy,axis_vr,axis_vt,jacobi_det);
 
     const Value courant_val = 0.3;
     const Value dt = courant_val * 2. * M_PI / (double)Axis_vt::num_global_grid;
 
     const int num_steps = (int)(2.*M_PI * 10000./dt);
     const int save_span = num_steps / 100;
+
+    Timer timer;
+    timer.start();
     for(int i=0;i<num_steps;i++){
+        if(i%1000 == 0 )std::cout<<i<<"\n";
         equation.solve<Axis_vr>(dt/2.);
         boundary_manager.apply<Axis_vr>();
         equation.solve<Axis_vt>(dt);
@@ -496,12 +514,16 @@ int main(int argc, char** argv)
 
         if(i% save_span == 0){
             projected_saver_2D.save(
-                "output/0D2V_pole/step_" 
+                "../output/0D2V_pole/step_" 
                 + std::to_string(i/save_span) 
                 + "_rank_" 
                 + std::to_string(world_rank)
                 + ".bin");
         }
+    }
+    timer.stop();
+    if(world_rank == 0){
+        std::cout<<timer<<"\n";
     }
     return 0;
 }
