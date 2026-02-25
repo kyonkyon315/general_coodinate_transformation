@@ -9,10 +9,12 @@ template<
     typename PhysX,   // Physic_x class: translate(int,int)
     typename PhysY,   // Physic_y class: translate(int,int)
     typename AxisA,   // Axis_0
-    typename AxisB    // Axis_1
+    typename AxisB,   // Axis_1
+    typename Jacobi_det
 >
 class ProjectedSaver2D {
 private:
+    const Jacobi_det& jacobi_det;
     void validated_index(Index& idA,Index& idB){
 
     }
@@ -20,9 +22,10 @@ public:
     ProjectedSaver2D(Tensor& tensor,
                      const PhysX& phys_x,
                      const PhysY& phys_y,
-                     AxisA, AxisB
+                     AxisA, AxisB,
+                     const Jacobi_det& jacobi_det
                     )
-        : tensor_(tensor), phys_x(phys_x), phys_y(phys_y)
+        : tensor_(tensor), phys_x(phys_x), phys_y(phys_y), jacobi_det(jacobi_det)
     {}
 
     // save to binary file
@@ -75,7 +78,7 @@ public:
                     vy[3] = phys_y.honestly_translate(vr0, vt1);
                 }
                 double fval = tensor_.at(i,j);
-                //std::cout<<fval<<"\n";
+                fval/= jacobi_det.at(i,j);
 
                 fout.write((char*)vx, sizeof(double)*4);
                 fout.write((char*)vy, sizeof(double)*4);
