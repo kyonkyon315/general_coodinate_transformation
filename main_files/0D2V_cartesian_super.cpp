@@ -1,5 +1,6 @@
 #include <cmath>
-#include "../include.h"
+#include <mpi.h>
+#include <string>
 
 using Value = double;
 using namespace std;
@@ -10,37 +11,65 @@ using namespace std;
 //通し番号は重複することなく、互いに隣り合った0以上の整数である必要があります。また、0を含む必要があります。
 //計算空間の軸なので、一律Δx=1であり、軸同士は直交しています。
 //最後の3,3 >はゴーストセルのグリッド数です。
-using Axis_vx = Axis<0,100,2,3>;
-using Axis_vy = Axis<1,200,1,3>;
+#include "../supercomputer_instruments/axis.h"
+using Axis_vr = Axis<0,50,1,3>;
+using Axis_vt = Axis<1,50,1,3>;
 
+#include "../supercomputer_instruments/n_d_tensor_with_ghost_cell.h"
 //電子分布関数の型を定義
 //先頭に入力する型はテンソルの値の型です。その後に続く軸は、通し番号が小さいものほど左に入力してください。
-using DistributionFunction = NdTensorWithGhostCell<Value,Axis_vx,Axis_vy>;
+using DistributionFunction = NdTensorWithGhostCell<Value,Axis_vr,Axis_vt>;
 
+#include "../vec3.h"
 //磁場の型を定義
 using MagneticField = Vec3<Value>;
 
+#include "../none.h"
 //電流計算が不要の時（磁場固定のときなど）はCurrentをNone_currentにしておく
-using Current = None_current;
-
-//グローバル変数としてインスタンス化しておく。
-namespace Global{
-    DistributionFunction dist_function;
-    MagneticField m_field;
-}
+using Current_type = None_current;
 
 /***********************************************
  * 物理空間と計算空間の関係を表す関数を書きます(始)*
  ***********************************************/
+#include "../normalization.h"
 
-// --- グローバル定数とヘルパー関数の定義 ---
-constexpr Value v_max = 5. * Norm::Param::v_thermal/Norm::Base::v0;
-const Value grid_size_vx = 2. * v_max / Axis_vx::num_grid;
-const Value grid_size_vy = 2. * v_max / Axis_vy::num_grid;
+// --- グローバル定数の定義 ---
+namespace Global{
+    constexpr Value v_max = 10. * Norm::Param::v_thermal / Norm::Base::v0;
+    constexpr Value grid_size_vr = v_max / Axis_vr::num_global_grid;
 
-Value vx(int calc_vx){ return grid_size_vx * (double)(calc_vx-Axis_vx::num_grid/2);}
-Value vy(int calc_vy){ return grid_size_vy * (double)(calc_vy-Axis_vy::num_grid/2);}
+    constexpr Value grid_size_vt = 2.*M_PI / (double)(Axis_vt::num_global_grid);
+}
+#include "../supercomputer_instruments/axis_instantiator.h"
+//計算空間はグリッドサイズが１なので、それを意味のあるスケールに変換するクラスをつくります
+class CalcVr_2_Vr{
+private:
+    const int vr_start_id;
+    static int calc_start_id(const int my_world_rank){
+        auto [axis_vr, axis_vt] = axis_instantiator<Axis_vr,Axis_vt>(my_world_rank);
+        return axis_vr.L_id;
+    }
+public:
+    CalcVr_2_Vr(const int my_world_rank):
+        vr_start_id(calc_start_id(my_world_rank))
+    {}
 
+    Value apply(const int calc_vr)const{ return Global::grid_size_vr * (0.5 + (double)(vr_start_id + calc_vr));}
+};
+
+class CalcVt_2_Vt{
+private:
+    const int vt_start_id;
+    static int calc_start_id(const int my_world_rank){
+        auto [axis_vr, axis_vt] = axis_instantiator<Axis_vr,Axis_vt>(my_world_rank);
+        return axis_vt.L_id;
+    }
+public:
+    CalcVt_2_Vt(const int my_world_rank):
+        vt_start_id(calc_start_id(my_world_rank))
+    {}
+    Value apply(const int calc_vt)const{ return Global::grid_size_vt * (0.5 + (double)(vt_start_id+calc_vt));}
+};
 
 
 // --- 物理座標クラス ---
@@ -48,116 +77,222 @@ Value vy(int calc_vy){ return grid_size_vy * (double)(calc_vy-Axis_vy::num_grid/
 //それを用いてコンストラクタで各場所での値を事前計算してテーブルに格納します。（table.set_value(honestly_translate))
 //シミュレーション中はテーブルを参照します。
 //こちらも計算軸クラスと同様に通し番号を設定します。
+using FullSliceGhost_r = Slice<-Axis_vr::L_ghost_length, Axis_vr::num_grid+Axis_vr::R_ghost_length>;
+using FullSliceGhost_t = Slice<-Axis_vt::L_ghost_length, Axis_vt::num_grid+Axis_vt::R_ghost_length>;
 
 class Physic_vx
 {
+    NdTensorWithGhostCell<Value,Axis_vr,Axis_vt> table;
+    const CalcVr_2_Vr calc_vr_2_vr;
+    const CalcVt_2_Vt calc_vt_2_vt;
 public:
-    static Value honestly_translate(int calc_vx,int calc_vy){
-        return vx(calc_vx);
+    Value honestly_translate(int calc_vr,int calc_vt)const{
+        // v_x = vr * cos(vt)
+        const Value vr = calc_vr_2_vr.apply(calc_vr);
+        const Value vt = calc_vt_2_vt.apply(calc_vt);
+        return vr * cos(vt);
     }
 
-    Physic_vx(){}
-    Value translate(int calc_vx,int calc_vy)const{
-        return vx(calc_vx);    
+    Physic_vx(const int my_world_rank):
+        table(my_world_rank),
+        calc_vr_2_vr(my_world_rank),
+        calc_vt_2_vt(my_world_rank)
+    {
+        table.set_value_sliced<FullSliceGhost_r,FullSliceGhost_t>(
+            [this](const int calc_vr,const int calc_vt){return honestly_translate(calc_vr, calc_vt);}
+        );
     }
-    static constexpr int label = 0;
+
+    Value translate(int calc_vr,int calc_vt)const{
+        return table.at(calc_vr,calc_vt);    
+    }
+    static const int label = 0;
 };
 
 class Physic_vy
 {
 private:
+    NdTensorWithGhostCell<Value,Axis_vr,Axis_vt> table;
+    const CalcVr_2_Vr calc_vr_2_vr;
+    const CalcVt_2_Vt calc_vt_2_vt;
 public:
-    static Value honestly_translate(int calc_vx,int calc_vy){
+    Value honestly_translate(int calc_vr,int calc_vt)const{
         // v_y = vr * sin(vt) 
-        return vy(calc_vy);
+        const Value vr = calc_vr_2_vr.apply(calc_vr);
+        const Value vt = calc_vt_2_vt.apply(calc_vt);
+        return vr * sin(vt);
     }
-    Physic_vy(){}
-    Value translate(int calc_vx,int calc_vy)const{
-        return vy(calc_vy);    
+    Physic_vy(const int my_world_rank):
+        table(my_world_rank),
+        calc_vr_2_vr(my_world_rank),
+        calc_vt_2_vt(my_world_rank)
+    {
+        table.set_value_sliced<FullSliceGhost_r,FullSliceGhost_t>(
+            [this](const int calc_vr,const int calc_vt){return honestly_translate(calc_vr, calc_vt);}
+        );
     }
-    static constexpr int label = 1;
+    Value translate(int calc_vr,int calc_vt)const{
+        return table.at(calc_vr,calc_vt);    
+    }
+    static const int label = 1;
 };
 
-
-//グローバル変数としてインスタンス化しておく。
-namespace Global{
-    Physic_vx physic_vx;
-    Physic_vy physic_vy;
-}
 /***********************************************
  * 計算軸を物理軸で微分した値の関数を書きます　(始)*
  ***********************************************/
 
-
-
-class Vx_diff_vx
+class Vr_diff_vx
 {
+private:
+    NdTensorWithGhostCell<Value,Axis_vr,Axis_vt> table;
+    const CalcVt_2_Vt calc_vt_2_vt;
+    Value honestly_translate(const int calc_vr,const int calc_vt){
+        // v_y = vr * sin(vt) 
+        const Value vt = calc_vt_2_vt.apply(calc_vt);
+        return std::cos(vt)/(double)Global::grid_size_vr;
+    }
 public:
-    Vx_diff_vx(){}
-    Value at(int calc_vx,int calc_vy)const{
-        return 1./(double)grid_size_vx;
+    Vr_diff_vx(const int my_world_rank):
+        table(my_world_rank),
+        calc_vt_2_vt(my_world_rank)
+    {
+        table.set_value_sliced<FullSliceGhost_r,FullSliceGhost_t>(
+            [this](const int calc_vr,const int calc_vt){return honestly_translate(calc_vr, calc_vt);}
+        );
+    }
+    Value at(int calc_vr,int calc_vt)const{
+        return table.at(calc_vr,calc_vt);
     }
 };
 
-class Vy_diff_vy
+class Vr_diff_vy
 {
+private:
+    NdTensorWithGhostCell<Value,Axis_vr,Axis_vt> table;
+    const CalcVt_2_Vt calc_vt_2_vt;
+    Value honestly_translate(const int calc_vr,const int calc_vt){
+        // v_y = vr * sin(vt) 
+        const Value vt = calc_vt_2_vt.apply(calc_vt);
+        return std::sin(vt)/(double)Global::grid_size_vr;
+    }
 public:
-    Vy_diff_vy(){}
-    Value at(int calc_vx,int calc_vy)const{
-        return 1./(double)grid_size_vy;
+    Vr_diff_vy(const int my_world_rank):
+        table(my_world_rank),
+        calc_vt_2_vt(my_world_rank)
+    {
+        table.set_value_sliced<FullSliceGhost_r,FullSliceGhost_t>(
+            [this](const int calc_vr,const int calc_vt){return honestly_translate(calc_vr, calc_vt);}
+        );
+    }
+    Value at(int calc_vr,int calc_vt)const{
+        return table.at(calc_vr,calc_vt);
     }
 };
 
+class Vt_diff_vx
+{
+private:
+    NdTensorWithGhostCell<Value,Axis_vr,Axis_vt> table;
+    const CalcVr_2_Vr calc_vr_2_vr;
+    const CalcVt_2_Vt calc_vt_2_vt;
+    Value honestly_translate(const int calc_vr,const int calc_vt){
+        // v_y = vr * sin(vt) 
+        const Value vr = calc_vr_2_vr.apply(calc_vr);
+        const Value vt = calc_vt_2_vt.apply(calc_vt);
+        return  - std::sin(vt)/(vr*(double)Global::grid_size_vt);
+    }
+public:
+    Vt_diff_vx(const int my_world_rank):
+        table(my_world_rank),
+        calc_vr_2_vr(my_world_rank),
+        calc_vt_2_vt(my_world_rank)
+    {
+        table.set_value_sliced<FullSliceGhost_r,FullSliceGhost_t>(
+            [this](const int calc_vr,const int calc_vt){return honestly_translate(calc_vr, calc_vt);}
+        );
+    }
 
-//グローバル変数としてインスタンス化
-namespace Global{
-    const Independent independent;
-    const Vx_diff_vx vx_diff_vx;
-    const Vy_diff_vy vy_diff_vy;
-}
+    Value at(int calc_vr,int calc_vt)const{
+        return table.at(calc_vr,calc_vt);
+    }
+};
 
-/*******************************************************************
- * Jacobian行列を定義します。上で作成したクラスを行列風に並べてください。*
- * 互いに独立な軸の箇所（微分が０）はIndependent classを入れてください。*
- *                                                                 *
- * 具体的には、Jacobian[I,J]には「通し番号Iの計算軸」を「通し番号Jの物理*
- * 軸」で微分したものを入れてください。                               *
- *******************************************************************/
+class Vt_diff_vy
+{
+private:
+    NdTensorWithGhostCell<Value,Axis_vr,Axis_vt> table;
+    const CalcVr_2_Vr calc_vr_2_vr;
+    const CalcVt_2_Vt calc_vt_2_vt;
+    Value honestly_translate(const int calc_vr,const int calc_vt){
+        // v_y = vr * sin(vt) 
+        const Value vr = calc_vr_2_vr.apply(calc_vr);
+        const Value vt = calc_vt_2_vt.apply(calc_vt);
+        return  std::cos(vt)/(vr*(double)Global::grid_size_vt);
+    }
+public:
+    Vt_diff_vy(const int my_world_rank):
+        table(my_world_rank),
+        calc_vr_2_vr(my_world_rank),
+        calc_vt_2_vt(my_world_rank)
+    {
+        table.set_value_sliced<FullSliceGhost_r,FullSliceGhost_t>(
+            [this](const int calc_vr,const int calc_vt){return honestly_translate(calc_vr, calc_vt);}
+        );
+    }
+    Value at(int calc_vr,int calc_vt)const{
+        return table.at(calc_vr,calc_vt);
+    }
+};
 
-namespace Global{
-Jacobian jacobian(
-    vx_diff_vx  , independent,  
-    independent , vy_diff_vy 
-);
-}
-//jacobianの絶対値も関数で作ります。分布関数の初期化で使います。
-Value jacobi_det(int ivx,int ivy){
-    return grid_size_vx*grid_size_vy;
-}
+class Jacobi_Det{
+private:
+    const CalcVr_2_Vr calc_vr_2_vr;
+public:
+    Jacobi_Det(const int my_world_rank):
+        calc_vr_2_vr(my_world_rank)
+    {}
+
+    Value at(const int calc_vr,const int calc_vt)const{
+        const Value vr = calc_vr_2_vr.apply(calc_vr);
+        return Global::grid_size_vr*Global::grid_size_vt*vr;
+    }
+};
+
 /*******************************************
  * 解くべき移流方程式を定義します。           *
  * df/dt + q/m(v*B)・∇_v f = 0 *
  * を例に定義の仕方を解説                    *
  *******************************************/
+bool is_velo_left_edge(const int my_world_rank){
+    auto [axis_vr, axis_vt] = axis_instantiator<Axis_vr,Axis_vt>(my_world_rank);
+    return axis_vr.block_id == 0;
+}
 
+bool is_velo_right_edge(const int my_world_rank){
+    auto [axis_vr, axis_vt] = axis_instantiator<Axis_vr,Axis_vt>(my_world_rank);
+    return axis_vr.block_id == Axis_vr::num_blocks-1;
+}
 //移流項の定義
 //------------------------------------------
 // 1. q/m (E + v×B)_x
 //------------------------------------------
 class Fvx {
+private:
+    const bool _is_velo_right_edge;
+    const MagneticField& m_field;
+    const Physic_vy& physic_vy;
 public:
-    Fvx(){}
-    Value at(int calc_vx, int calc_vy) const {
-        if(calc_vx == -1){
-            return - at(0,calc_vy);
-        }
-        else if(calc_vx == Axis_vx::num_grid){
-            return -at(Axis_vx::num_grid-1,calc_vy);
-        }
-        else{
-            const Value vy = Global::physic_vy.translate(calc_vx, calc_vy);
-            return vy*Global::m_field.z;
-        }
+    Fvx(const int my_world_rank,
+        const MagneticField& m_field,
+        const Physic_vy& physic_vy
+    ):
+        _is_velo_right_edge(is_velo_right_edge(my_world_rank)),
+        m_field(m_field),
+        physic_vy(physic_vy)
+    {}
+    Value at(int calc_vr, int calc_vt) const {
+        const Value vy = physic_vy.translate(calc_vr, calc_vt);
+        return - vy*m_field.z;//電子の電荷が負なので - がつく
     }
 };
 
@@ -165,32 +300,28 @@ public:
 // 2. q/m (E + v×B)_x
 //------------------------------------------
 class Fvy {
+private:
+    const bool _is_velo_right_edge;
+    const MagneticField& m_field;
+    const Physic_vx& physic_vx;
 public:
-    Fvy(){}
-    Value at(int calc_vx, int calc_vy) const {
-        //速度空間の境界でフラックスが0になるように、移流を反対称にする。
-        if(calc_vy == -1){
-            return - at(calc_vx,0);
-        }
-        else if(calc_vy == Axis_vy::num_grid){
-            return -at(calc_vx,Axis_vy::num_grid-1);
-        }
-        else{
-            const Value vx = Global::physic_vx.translate(calc_vx, calc_vy);
-            return -vx*Global::m_field.z;
-        }
+    Fvy(const int my_world_rank,
+        const MagneticField& m_field,
+        const Physic_vx& physic_vx
+    ):
+        _is_velo_right_edge(is_velo_right_edge(my_world_rank)),
+        m_field(m_field),
+        physic_vx(physic_vx)
+    {}
+    Value at(int calc_vr, int calc_vt) const {
+        const Value vx = physic_vx.translate(calc_vr, calc_vt);
+        return vx*m_field.z;
     }
 };
-namespace Global{
-    Fvx flux_vx;
-    Fvy flux_vy;
-}
-
 /****************************************************************************
  * 次に、Flux計算機を選択します。今回は、Umeda2008を用います。
  ****************************************************************************/
-
-//using Scheme = Umeda2008;
+#include "../schemes/umeda_2008_fifth_order.h"
 using Scheme = Umeda2008_5;
 namespace Global{
     Scheme scheme;
@@ -213,113 +344,194 @@ namespace Global{
  * 
  ****************************************************************************/
 
-class BoundaryCondition_vx
+class BoundaryCondition_vr
 {
 public:
     static const int label = 0;
-    //物理的におかしいけど、とりあえずこうしておく
-    template<typename Func>
-    static Value left(Func func,int calc_vx, int calc_vy){
-        return 0.;
+    static constexpr bool not_only_comm = false;
+    
+    template<int Index>
+    static int left(const int calc_vr,const int calc_vt){
+        static_assert(Axis_vt::num_grid%2 == 0,"v_theta空間のグリッド数は偶数である必要がある");
+        constexpr int vt_half_num_grid = Axis_vt::num_global_grid/2;
+        
+        if constexpr(Index == 0){
+            return -calc_vr-1;
+        }
+        else if constexpr(Index == 1){
+            const int index_vt=(
+                calc_vt < vt_half_num_grid ? 
+                calc_vt+vt_half_num_grid:
+                calc_vt-vt_half_num_grid
+            );
+            return index_vt;
+        }
+        else return 0;
     }
 
-    //物理的におかしいけど、とりあえずこうしておく
-    template<typename Func>
-    static Value right(Func func,int calc_vx, int calc_vy){
-        return 0.;
+    template<int Index>
+    static int right(const int calc_vr,const int calc_vt){
+        if constexpr(Index == 0){
+            return Axis_vr::num_global_grid - 1 - (calc_vr - Axis_vr::num_global_grid);
+        }
+        else if constexpr(Index == 1){
+            return calc_vt;
+        }
+        else return 0;
     }
 };
 
 //thetaは周期境界条件
-class BoundaryCondition_vy
+class BoundaryCondition_vt
 {
 public:
     static const int label = 1;
-    template<typename Func>
-    static Value left(Func func,int calc_vx, int calc_vy){
-        return 0.;
+    
+    static constexpr bool not_only_comm = false;
+
+    template<int Index>
+    static int left(const int calc_vr,const int calc_vt){
+        if constexpr(Index == 0){
+            return calc_vr;
+        }
+        else if constexpr(Index == 1){
+            return calc_vt + Axis_vt::num_global_grid;
+        }
+        else return 0;
     }
-    template<typename Func>
-    static Value right(Func func,int calc_vx, int calc_vy){
-        return 0.;
+
+    template<int Index>
+    static int right(const int calc_vr,const int calc_vt){
+        if constexpr(Index == 0){
+            return calc_vr;
+        }
+        else if constexpr(Index == 1){
+            return calc_vt - Axis_vt::num_global_grid;
+        }
+        else return 0;
     }
 };
-
+#include "../pack.h"
 /*--------------------------------------
  * Pack を用いて境界条件をまとめます。
  *----------------------------------------------*/
-namespace Global{
-    BoundaryCondition_vx boundary_condition_vx;
-    BoundaryCondition_vy boundary_condition_vy;
-    
-    Pack boundary_condition(
-        boundary_condition_vx,
-        boundary_condition_vy
-    );
-}
-/*----------------------------------------------------------------------------
- * ターゲットとなる関数とboundary_conditionを用いてboundary_managerを作成します。
- *---------------------------------------------------------------------------*/
+using BoundaryCondition = Pack<BoundaryCondition_vr, BoundaryCondition_vt>;
 
-
-namespace Global{
-    BoundaryManager boundary_manager(dist_function,boundary_condition);
+Value fM(const Value vr_tilde/*無次元量が入る*/){
+    return Norm::Coef::Ne_tilde * std::exp(-vr_tilde * vr_tilde /2.)
+    //return std::exp(-vr_tilde * vr_tilde /2.)
+           /(2.* M_PI );
+    //Ne_tilde = int f_tilde dv_tilde^3
 }
 
-
-/****************************************************************************
- * 最後に、解くべき移流方程式を定義します。
- * 
- *物理演算子はOperatorsに、物理移流項はAdvectionsに、それぞれclass Packを用いてまとめる。
- *ただし、Operatorsの順番とAdvectionsの順番は式の順番と同じにしてください。
- *
- *さらにそれらOperatorsとAdvections、および発展させたい関数（ここではdist_func）を
- *用いてAdvectionEquationをインスタンス化します。これが、本シミュレーションのメインと
- *なるソルバーとして働きます。
- ****************************************************************************/
-
-namespace Global{
-    Pack operators(physic_vx,physic_vy);
-    Pack advections(flux_vx,flux_vy);
-    AdvectionEquation equation(dist_function,operators,advections,jacobian,scheme,boundary_condition,current);
-}
-
-Value gauss(Value x,Value y){
-    Value sigma = 25.;
-    Value m_x = 40.;
-    Value m_y =  0.;
-    return std::exp(-((x-m_x)*(x-m_x)+(y-m_y)*(y-m_y))/sigma);
-}
-
-int main(){
-    Value dt = 0.1;
-    int num_steps = 10000;
-    Global::dist_function.set_value(
-        [](int calc_vx,int calc_vy){
-            Value vx = Global::physic_vx.translate(calc_vx,calc_vy);
-            Value vy = Global::physic_vy.translate(calc_vx,calc_vy);
-            return gauss(vx,vy);
+void init(int my_world_rank,const Jacobi_Det& jacobi_det,DistributionFunction& dist_function){
+    CalcVr_2_Vr calc_vr_2_vr(my_world_rank);
+    CalcVt_2_Vt calc_vt_2_vt(my_world_rank);
+    for(int i=0;i<Axis_vr::num_grid;i++){
+        for(int j=0;j<Axis_vt::num_grid;j++){
+            const Value vr = calc_vr_2_vr.apply(i);
+            dist_function.at(i,j) = fM(vr)*jacobi_det.at(i, j);
         }
+    }
+}
+
+#include "../supercomputer_instruments/advection_equation.h"
+#include "../supercomputer_instruments/FDTD/fdtd_solver_1d.h"
+#include "../supercomputer_instruments/boundary_manager.h"
+#include "../jacobian.h"
+
+#include "../projected_saver_2D.hpp"
+#include "../utils/Timer.h"
+
+int main(int argc, char** argv)
+{
+    MPI_Init(&argc, &argv);
+
+    int world_rank, world_size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+
+    DistributionFunction dist_function(world_rank);
+    MagneticField m_field(world_rank);
+    Current_type current;
+
+    m_field.z = Norm::Coef::B_tilde;
+
+    const Physic_vx physic_vx(world_rank);
+    const Physic_vy physic_vy(world_rank);
+
+    using Operators = Pack<Physic_vx,Physic_vy>;
+
+    Operators operators(physic_vx,physic_vy);
+
+    const Independent independent;
+    const Vr_diff_vx vr_diff_vx(world_rank);
+    const Vr_diff_vy vr_diff_vy(world_rank);
+    const Vt_diff_vx vt_diff_vx(world_rank);
+    const Vt_diff_vy vt_diff_vy(world_rank);
+
+    const Jacobian jacobian(
+        vr_diff_vx , vr_diff_vy, 
+        vt_diff_vx , vt_diff_vy 
     );
 
-    ProjectedSaver2D saver(
-        Global::dist_function,
-        Global::physic_vx, Global::physic_vy,
-        Axis_vx{}, Axis_vy{}
+    Fvx flux_vx(world_rank,m_field,physic_vy);
+    Fvy flux_vy(world_rank,m_field,physic_vx);
+
+    const BoundaryCondition_vr boundary_condition_vr;
+    const BoundaryCondition_vt boundary_condition_vt;
+
+    const Pack boundary_condition(
+        boundary_condition_vr,
+        boundary_condition_vt
     );
 
-    //Global::dist_function.at(20,20)=5.;
-    Global::m_field.z=m/Q/10.;
+    
+    const Pack advections(flux_vx,flux_vy);
+    AdvectionEquation equation(world_rank,dist_function,advections,jacobian,Global::scheme, current);
+    
+    auto [axis_vr, axis_vt] = axis_instantiator<Axis_vr,Axis_vt>(world_rank);
+    
+    BoundaryManager boundary_manager(world_rank,world_size,dist_function,boundary_condition,axis_vr,axis_vt);
+ 
+
+    Jacobi_Det jacobi_det(world_rank);
+    ProjectedSaver2D projected_saver_2D(dist_function,physic_vx,physic_vy,axis_vr,axis_vt,jacobi_det);
+
+    init(world_rank,jacobi_det,dist_function);
+    boundary_manager.apply<Axis_vr>();
+    boundary_manager.apply<Axis_vt>();
+
+
+    const Value courant_val = 0.3;
+    const Value dt = courant_val * 2. * M_PI / (double)Axis_vt::num_global_grid;
+
+    const int num_steps = (int)(2.*M_PI * 10000./dt);
+    const int save_span = num_steps / 100;
+
+    Timer timer;
+    timer.start();
     for(int i=0;i<num_steps;i++){
-        if(i%30==0)saver.save("../data/0D2V_cartesian/"+std::to_string(i/30)+".bin");
-        if(i%100==0)std::cout<<i<<std::endl;
-        Global::equation.solve<Axis_vx>(dt/2.);
-        Global::boundary_manager.apply<Axis_vx>();
-        Global::equation.solve<Axis_vy>(dt);
-        Global::boundary_manager.apply<Axis_vy>();
-        Global::equation.solve<Axis_vx>(dt/2.);
-        Global::boundary_manager.apply<Axis_vx>();
-        //saver.save("data/0D2V/"+std::to_string(i)+".bin");
+        if(i%1000 == 0 )std::cout<<i<<"\n";
+        equation.solve<Axis_vr>(dt/2.);
+        boundary_manager.apply<Axis_vr>();
+        equation.solve<Axis_vt>(dt);
+        boundary_manager.apply<Axis_vt>();
+        equation.solve<Axis_vr>(dt/2.);
+        boundary_manager.apply<Axis_vr>();
+
+        if(i% save_span == 0){
+            projected_saver_2D.save(
+                "../output/0D2V_pole/step_" 
+                + std::to_string(i/save_span) 
+                + "_rank_" 
+                + std::to_string(world_rank)
+                + ".bin");
+        }
+    }
+    timer.stop();
+    if(world_rank == 0){
+        std::cout<<timer<<"\n";
     }
     return 0;
 }
