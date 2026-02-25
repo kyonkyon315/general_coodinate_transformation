@@ -419,6 +419,7 @@ using BoundaryCondition = Pack<BoundaryCondition_vr, BoundaryCondition_vt>;
 
 Value fM(const Value vr_tilde/*無次元量が入る*/){
     return Norm::Coef::Ne_tilde * std::exp(-vr_tilde * vr_tilde /2.)
+    //return std::exp(-vr_tilde * vr_tilde /2.)
            /(2.* M_PI );
     //Ne_tilde = int f_tilde dv_tilde^3
 }
@@ -429,7 +430,7 @@ void init(int my_world_rank,const Jacobi_Det& jacobi_det,DistributionFunction& d
     for(int i=0;i<Axis_vr::num_grid;i++){
         for(int j=0;j<Axis_vt::num_grid;j++){
             const Value vr = calc_vr_2_vr.apply(i);
-            dist_function.at(i,j) = fM(vr)/jacobi_det.at(i, j);
+            dist_function.at(i,j) = fM(vr)*jacobi_det.at(i, j);
         }
     }
 }
@@ -453,6 +454,8 @@ int main(int argc, char** argv)
     DistributionFunction dist_function(world_rank);
     MagneticField m_field(world_rank);
     Current_type current;
+
+    m_field.z = Norm::Coef::B_tilde;
 
     const Physic_vx physic_vx(world_rank);
     const Physic_vy physic_vy(world_rank);
@@ -494,6 +497,11 @@ int main(int argc, char** argv)
 
     Jacobi_Det jacobi_det(world_rank);
     ProjectedSaver2D projected_saver_2D(dist_function,physic_vx,physic_vy,axis_vr,axis_vt,jacobi_det);
+
+    init(world_rank,jacobi_det,dist_function);
+    boundary_manager.apply<Axis_vr>();
+    boundary_manager.apply<Axis_vt>();
+
 
     const Value courant_val = 0.3;
     const Value dt = courant_val * 2. * M_PI / (double)Axis_vt::num_global_grid;
